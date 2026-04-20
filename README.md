@@ -15,6 +15,9 @@ Slike so zbrane in dostopna na [kaggle spletni strani](https://www.kaggle.com/da
 Sorodna dela:
 
 [Large-Scale Quantitative Analysis of Painting Arts](https://pmc.ncbi.nlm.nih.gov/articles/PMC4263068/)
+- uporaba barv: kako pogosto se pojavijo specifične barve
+- barvna raznolikost
+- svetlost in moč kontrasta
 
 ---
 
