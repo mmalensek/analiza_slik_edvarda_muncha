@@ -19,6 +19,8 @@ Sorodna dela:
 - barvna raznolikost
 - svetlost in moč kontrasta
 
+[The Sky in Edvard Munch’s The Scream](https://journals.ametsoc.org/view/journals/bams/99/7/bams-d-17-0144.1.xml?tab_body=pdf)
+- analiza vzorcev in barv neba na sliki "Krik"
 ---
 
 Rezultat prototipa:
