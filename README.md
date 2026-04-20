@@ -8,7 +8,7 @@
 
 ---
 
-Slike so zbrane in dostopna na [kaggle spletni strani](https://www.kaggle.com/datasets/isaienkov/edvard-munch-paintings).
+Slike so zbrane in dostopne na [kaggle spletni strani](https://www.kaggle.com/datasets/isaienkov/edvard-munch-paintings).
 
 ---
 
