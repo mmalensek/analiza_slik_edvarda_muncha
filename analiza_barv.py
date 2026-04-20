@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Analiz barv slik Edvarda Muncha z uporabo k-means algoritma za pridobivanje dominantnih barv.
+
 Usage: analiza_barv.py [slika1.jpg] [slika2.jpg] ...
 """
 
@@ -240,7 +241,7 @@ def main():
                         help="Start of numeric image range (inclusive).")
     parser.add_argument("--end", type=int, default=None,
                         help="End of numeric image range (inclusive).")
-    parser.add_argument("--folder", default="./munch_paintings",
+    parser.add_argument("--folder", default="../munch_paintings",
                         help="Folder containing numbered image files.")
     args = parser.parse_args()
 

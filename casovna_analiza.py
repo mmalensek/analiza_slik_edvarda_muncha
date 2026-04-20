@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Temporal colour analysis of Edvard Munch paintings.
+Časovna analiza barvnih trendov v slikah Edvarda Muncha. 
+
+Iz vsake slike izvlečemo dominantne barve in jih združimo po letih nastanka, 
+da vidimo, kako se je spreminjala svetloba, toplina, nasičenost in kompleksnost barv skozi čas.
 
 Usage:
     python casovna_analiza.py --start 1 --end 500
@@ -194,7 +197,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", type=int, required=True)
     parser.add_argument("--end", type=int, required=True)
-    parser.add_argument("--folder", default="./munch_paintings")
+    parser.add_argument("--folder", default="../munch_paintings")
     parser.add_argument("--csv", default="edvard_munch.csv")
     args = parser.parse_args()
 
