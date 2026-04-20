@@ -14,8 +14,6 @@ Slike so zbrane in dostopna na [kaggle spletni strani](https://www.kaggle.com/da
 
 Sorodna dela:
 
-[Computational color analysis of paintings for different artists of the XVI and XVII centuries](https://onlinelibrary.wiley.com/doi/10.1002/col.22211)
-
 [Large-Scale Quantitative Analysis of Painting Arts](https://pmc.ncbi.nlm.nih.gov/articles/PMC4263068/)
 
 ---
