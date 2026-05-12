@@ -40,7 +40,7 @@ Zagon glavne skripte za časovno analizo (primeri):
 
 ```bash
 # barva + tekstura
-python3 casovna_analiza.py --start 1 --end 100 --folder ../munch_paintings --csv edvard_munch.csv --mode both
+python3 casovna_analiza.py --start 1 --end 100 --folder ../../munch_paintings --csv ../data/edvard_munch.csv --mode both
 
 # samo barva
 python3 casovna_analiza.py --start 1 --end 100 --mode color

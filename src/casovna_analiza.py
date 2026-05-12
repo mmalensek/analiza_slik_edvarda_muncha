@@ -77,8 +77,8 @@ def load_image(path, max_px=300):
     return np.array(img)
 
 # ---------------- EXTERNAL ANALYSIS MODULES ----------------
-from color_analysis import extract_colours, brightness, warmth, saturation
-from edge_analysis import compute_texture_metrics
+from analize.color_analysis import extract_colours, brightness, warmth, saturation
+from analize.edge_analysis import compute_texture_metrics
 
 # ---------------- ANALYSIS ----------------
 def analyse_painting(path, metadata, mode="both"):
@@ -265,8 +265,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", type=int, required=True)
     parser.add_argument("--end", type=int, required=True)
-    parser.add_argument("--folder", default="../munch_paintings")
-    parser.add_argument("--csv", default="edvard_munch.csv")
+    parser.add_argument("--folder", default="../../munch_paintings")
+    parser.add_argument("--csv", default="../data/edvard_munch.csv")
     parser.add_argument("--mode", choices=["color", "edge", "both"], default="both", help="Which analysis to run")
     args = parser.parse_args()
 
