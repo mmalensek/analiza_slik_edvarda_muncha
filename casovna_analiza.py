@@ -76,39 +76,16 @@ def load_image(path, max_px=300):
     img.thumbnail((max_px, max_px), Image.LANCZOS)
     return np.array(img)
 
-# ---------------- COLOR EXTRACTION ----------------
-def extract_colours(pixels, n=N_COLORS):
-    flat = pixels.reshape(-1, 3).astype(float)
-    km = KMeans(n_clusters=n, random_state=42, n_init=10)
-    km.fit(flat)
-
-    counts = np.bincount(km.labels_)
-    order = np.argsort(-counts)
-
-    colours = km.cluster_centers_[order] / 255.0
-    weights = counts[order] / counts.sum()
-
-    return colours, weights
-
-# ---------------- METRICS ----------------
-def brightness(rgb):
-    r, g, b = rgb
-    return 0.299*r + 0.587*g + 0.114*b
-
-def warmth(rgb):
-    r, g, b = rgb
-    return r - b
-
-def saturation(rgb):
-    r, g, b = rgb
-    mx = max(rgb)
-    mn = min(rgb)
-    if mx == 0:
-        return 0
-    return (mx - mn) / mx
+# ---------------- EXTERNAL ANALYSIS MODULES ----------------
+from color_analysis import extract_colours, brightness, warmth, saturation
+from edge_analysis import compute_texture_metrics
 
 # ---------------- ANALYSIS ----------------
-def analyse_painting(path, metadata):
+def analyse_painting(path, metadata, mode="both"):
+    """Analiziraj eno sliko; če je potrebna tekstura, izračuna tudi texture metrike.
+
+    mode: 'color', 'edge', or 'both'
+    """
     img_id = int(os.path.splitext(os.path.basename(path))[0])
 
     if img_id not in metadata.index:
@@ -118,14 +95,30 @@ def analyse_painting(path, metadata):
 
     try:
         pixels = load_image(path)
-        cols, weights = extract_colours(pixels)
     except Exception:
         return None
+
+    cols = None
+    weights = None
+    texture = None
+
+    if mode in ("color", "both"):
+        try:
+            cols, weights = extract_colours(pixels)
+        except Exception:
+            cols, weights = None, None
+
+    if mode in ("edge", "both"):
+        try:
+            texture = compute_texture_metrics(pixels)
+        except Exception:
+            texture = None
 
     return {
         "year": year,
         "colours": cols,
-        "weights": weights
+        "weights": weights,
+        "texture": texture,
     }
 
 def aggregate_by_year(analyses):
@@ -140,57 +133,132 @@ def aggregate_by_year(analyses):
     for year, items in yearly.items():
         cols = []
         weights = []
+        textures = []
 
         for it in items:
-            for c, w in zip(it["colours"], it["weights"]):
-                cols.append(c)
-                weights.append(w)
+            # colors may be None when running in `edge` mode
+            if it.get("colours") is not None and it.get("weights") is not None:
+                for c, w in zip(it["colours"], it["weights"]):
+                    cols.append(c)
+                    weights.append(w)
+            if it.get("texture") is not None:
+                textures.append(it["texture"])
 
-        result[year] = (np.array(cols), np.array(weights))
+        result[year] = {
+            "cols": np.array(cols) if cols else np.array([]),
+            "weights": np.array(weights) if weights else np.array([]),
+            "textures": textures,
+        }
 
     return result
 
 # ---------------- TREND COMPUTATION ----------------
-def compute_trends(yearly_data):
+def compute_trends(yearly_data, mode="both"):
+    """Compute trends. Returns (years, color_trends, texture_trends).
+
+    color_trends is a dict with keys: brightness, warmth, saturation, entropy (or None if not computed).
+    texture_trends is a dict with texture metrics (or None if not computed).
+    """
     years = sorted(yearly_data.keys())
 
-    brightness_trend = []
-    warmth_trend = []
-    saturation_trend = []
-    entropy_trend = []
+    color_trends = None
+    texture_trends = None
+
+    if mode in ("color", "both"):
+        brightness_trend = []
+        warmth_trend = []
+        saturation_trend = []
+        entropy_trend = []
+        color_trends = {
+            "brightness": brightness_trend,
+            "warmth": warmth_trend,
+            "saturation": saturation_trend,
+            "entropy": entropy_trend,
+        }
+
+    if mode in ("edge", "both"):
+        texture_trends = {
+            "mean_gradient": [],
+            "std_gradient": [],
+            "edge_density": [],
+            "laplacian_variance": [],
+        }
 
     for y in years:
-        cols, weights = yearly_data[y]
+        entry = yearly_data[y]
 
-        b = np.average([brightness(c) for c in cols], weights=weights)
-        w = np.average([warmth(c) for c in cols], weights=weights)
-        s = np.average([saturation(c) for c in cols], weights=weights)
-        e = entropy(weights)
+        # Color trends
+        if color_trends is not None:
+            cols = entry.get("cols", np.array([]))
+            weights = entry.get("weights", np.array([]))
 
-        brightness_trend.append(b)
-        warmth_trend.append(w)
-        saturation_trend.append(s)
-        entropy_trend.append(e)
+            if len(cols) == 0 or len(weights) == 0:
+                color_trends["brightness"].append(np.nan)
+                color_trends["warmth"].append(np.nan)
+                color_trends["saturation"].append(np.nan)
+                color_trends["entropy"].append(np.nan)
+            else:
+                b = np.average([brightness(c) for c in cols], weights=weights)
+                w = np.average([warmth(c) for c in cols], weights=weights)
+                s = np.average([saturation(c) for c in cols], weights=weights)
+                e = entropy(weights)
 
-    return years, brightness_trend, warmth_trend, saturation_trend, entropy_trend
+                color_trends["brightness"].append(b)
+                color_trends["warmth"].append(w)
+                color_trends["saturation"].append(s)
+                color_trends["entropy"].append(e)
+
+        # Texture trends
+        if texture_trends is not None:
+            textures = entry.get("textures", [])
+            if textures:
+                mg = np.mean([t["mean_gradient"] for t in textures])
+                sg = np.mean([t["std_gradient"] for t in textures])
+                ed = np.mean([t["edge_density"] for t in textures])
+                lv = np.mean([t["laplacian_variance"] for t in textures])
+            else:
+                mg = sg = ed = lv = np.nan
+
+            texture_trends["mean_gradient"].append(mg)
+            texture_trends["std_gradient"].append(sg)
+            texture_trends["edge_density"].append(ed)
+            texture_trends["laplacian_variance"].append(lv)
+
+    return years, color_trends, texture_trends
 
 # ---------------- VISUALIZATION ----------------
-def plot_trends(years, brightness, warmth, saturation, entropy_vals):
-    plt.figure(figsize=(12, 6))
+def plot_trends(years, color_trends=None, texture_trends=None, mode="both"):
+    if mode in ("color", "both") and color_trends is not None:
+        plt.figure(figsize=(12, 6))
+        plt.plot(years, color_trends["brightness"], label="Brightness")
+        plt.plot(years, color_trends["warmth"], label="Warmth (Red - Blue)")
+        plt.plot(years, color_trends["saturation"], label="Saturation")
+        plt.plot(years, color_trends["entropy"], label="Colour Complexity (Entropy)")
 
-    plt.plot(years, brightness, label="Brightness")
-    plt.plot(years, warmth, label="Warmth (Red - Blue)")
-    plt.plot(years, saturation, label="Saturation")
-    plt.plot(years, entropy_vals, label="Colour Complexity (Entropy)")
+        plt.xlabel("Year")
+        plt.ylabel("Value")
+        plt.title("Temporal Colour Evolution")
+        plt.legend()
+        plt.grid(alpha=0.2)
 
-    plt.xlabel("Year")
-    plt.ylabel("Value")
-    plt.title("Temporal Colour Evolution")
-    plt.legend()
-    plt.grid(alpha=0.2)
+        plt.tight_layout()
+        plt.show()
 
-    plt.tight_layout()
-    plt.show()
+    if mode in ("edge", "both") and texture_trends is not None:
+        plt.figure(figsize=(12, 6))
+        plt.plot(years, texture_trends["mean_gradient"], label="Mean Gradient")
+        plt.plot(years, texture_trends["std_gradient"], label="Std Gradient")
+        plt.plot(years, texture_trends["edge_density"], label="Edge Density")
+        plt.plot(years, texture_trends["laplacian_variance"], label="Laplacian Variance")
+
+        plt.xlabel("Year")
+        plt.ylabel("Texture Metric")
+        plt.title("Temporal Texture / Edge Trends")
+        plt.legend()
+        plt.grid(alpha=0.2)
+
+        plt.tight_layout()
+        plt.show()
 
 # ---------------- MAIN ----------------
 def main():
@@ -199,6 +267,7 @@ def main():
     parser.add_argument("--end", type=int, required=True)
     parser.add_argument("--folder", default="../munch_paintings")
     parser.add_argument("--csv", default="edvard_munch.csv")
+    parser.add_argument("--mode", choices=["color", "edge", "both"], default="both", help="Which analysis to run")
     args = parser.parse_args()
 
     print("Loading metadata...")
@@ -212,7 +281,7 @@ def main():
     analyses = []
     for p in paths:
         print(f"Analysing {os.path.basename(p)}")
-        res = analyse_painting(p, metadata)
+        res = analyse_painting(p, metadata, mode=args.mode)
         if res:
             analyses.append(res)
 
@@ -220,10 +289,10 @@ def main():
     yearly = aggregate_by_year(analyses)
 
     print("Computing trends...")
-    years, b, w, s, e = compute_trends(yearly)
+    years, color_trends, texture_trends = compute_trends(yearly, mode=args.mode)
 
     print("Plotting results...")
-    plot_trends(years, b, w, s, e)
+    plot_trends(years, color_trends, texture_trends, mode=args.mode)
 
     print("Done.")
 

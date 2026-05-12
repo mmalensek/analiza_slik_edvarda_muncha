@@ -27,3 +27,31 @@ Rezultat prototipa:
 ![Rezultat prototipa](./rezultati_tmp/slike_analiza.png)
 
 ---
+
+## Zagon
+
+Namesti odvisnosti (v venv/conda env):
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+Zagon glavne skripte za časovno analizo (primeri):
+
+```bash
+# barva + tekstura
+python3 casovna_analiza.py --start 1 --end 100 --folder ../munch_paintings --csv edvard_munch.csv --mode both
+
+# samo barva
+python3 casovna_analiza.py --start 1 --end 100 --mode color
+
+# samo edge/tekstura
+python3 casovna_analiza.py --start 1 --end 100 --mode edge
+```
+
+Opombe:
+- Privzeti `--folder` je `../munch_paintings` in privzeti `--csv` je `edvard_munch.csv` 
+- `--mode` je lahko `color`, `edge`, ali `both`.
+
+
+Skripta analiza_barv.py je prvi Martinov prototip (da ne pozabiva).
