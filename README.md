@@ -36,6 +36,8 @@ Namesti odvisnosti (v venv/conda env):
 python3 -m pip install -r requirements.txt
 ```
 
+### Časovna analiza
+
 Zagon glavne skripte za časovno analizo (primeri):
 
 ```bash
@@ -54,4 +56,19 @@ Opombe:
 - `--mode` je lahko `color`, `edge`, ali `both`.
 
 
-Skripta analiza_barv.py je prvi Martinov prototip (da ne pozabiva).
+### Analiza posameznih slik
+
+Vizualizacija prevladajočih in najpomembnejših barv na posameznih slikah.
+
+``` bash
+python3 analiza_barv.py --start 1 --end 10 --folder ../../munch_paintings
+```
+
+#### Vizualizacija vmesnih korakov pri tej analizi
+
+``` bash
+python3 visualize_superpixels.py --sample
+
+# specifična slika
+python3 visualize_superpixels.py ../../munch_paintings/10.jpg
+```

@@ -1,11 +1,9 @@
-# Requirements for analiza_slik_edvarda_muncha
 numpy
 pandas
 Pillow
 matplotlib
 scipy
 scikit-learn
+scikit-image
 
-# Optional (if you later add CNN feature extraction):
-# torch
-# torchvision
+

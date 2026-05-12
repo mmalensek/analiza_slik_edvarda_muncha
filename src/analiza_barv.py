@@ -17,6 +17,11 @@ from sklearn.cluster import KMeans
 import warnings
 warnings.filterwarnings("ignore")
 
+# Import important colors analysis
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "analize"))
+from color_analysis import extract_important_colors
+
 # configuration
 N_COLORS = 8          # dominant colours to extract per painting
 FIGURE_BG = "#1c1b19" # dark warm surface 
@@ -108,16 +113,29 @@ def analyse_painting(path: str):
     """Load image → extract colours → return dict of results."""
     print(f"  Analysing: {os.path.basename(path)} …")
     pixels = load_and_resize(path)
+    
+    # Dominant colours
     colours, proportions = extract_dominant_colours(pixels)
     names = [rgb_to_name(c) for c in colours]
     hex_codes = [to_hex(c) for c in colours]
+    
+    # Important colours (saliency + contrast + rarity)
+    try:
+        important_colors = extract_important_colors(pixels, n_colors=8, n_superpixels=300)
+    except Exception as e:
+        print(f"    Warning: Could not extract important colors: {e}")
+        important_colors = []
+    
     return {
         "title": os.path.splitext(os.path.basename(path))[0].replace("_", " ").title(),
         "path": path,
+        # Dominant colours
         "colours": colours,
         "proportions": proportions,
         "names": names,
         "hex_codes": hex_codes,
+        # Important colours
+        "important_colors": important_colors,
     }
 
 # Visualization
@@ -125,16 +143,16 @@ def analyse_painting(path: str):
 def animate_analyses(analyses):
     """Build an animated matplotlib figure cycling through paintings."""
     n_paintings = len(analyses)
-    fig = plt.figure(figsize=(14, 7), facecolor=FIGURE_BG)
+    fig = plt.figure(figsize=(14, 8), facecolor=FIGURE_BG)
     fig.suptitle("Edvard Munch: Barvna analiza", color=TEXT_COLOR,
                  fontsize=16, fontweight="bold", y=0.97)
 
     # axes layout
-    ax_img  = fig.add_axes([0.03, 0.08, 0.32, 0.78])   # painting preview
-    ax_bar  = fig.add_axes([0.40, 0.08, 0.28, 0.78])   # horizontal bar chart
-    ax_pie  = fig.add_axes([0.72, 0.12, 0.26, 0.70])   # donut chart
+    ax_img      = fig.add_axes([0.03, 0.08, 0.32, 0.78])   # painting preview
+    ax_bar      = fig.add_axes([0.40, 0.08, 0.26, 0.78])   # dominant colours
+    ax_important = fig.add_axes([0.70, 0.08, 0.27, 0.78])  # important colours
 
-    for ax in [ax_img, ax_bar, ax_pie]:
+    for ax in [ax_img, ax_bar, ax_important]:
         ax.set_facecolor(FIGURE_BG)
         for spine in ax.spines.values():
             spine.set_edgecolor("#393836")
@@ -152,8 +170,8 @@ def animate_analyses(analyses):
         progress = min(tick / 20, 1.0)
 
         # clear axes for redraw
-        ax_img.cla(); ax_bar.cla(); ax_pie.cla()
-        for ax in [ax_img, ax_bar, ax_pie]:
+        ax_img.cla(); ax_bar.cla(); ax_important.cla()
+        for ax in [ax_img, ax_bar, ax_important]:
             ax.set_facecolor(FIGURE_BG)
 
         # painting image (fade in)
@@ -192,20 +210,31 @@ def animate_analyses(analyses):
                             f"{pct:.1f}%", va="center", color=TEXT_COLOR,
                             fontsize=7)
 
-        # donut chart (animated proportions)
-        animated_props = data["proportions"] * progress
-        if animated_props.sum() < 0.001:
-            animated_props = np.ones(n) / n * 0.001
-        wedge_props = animated_props / animated_props.sum()
-
-        wedges, _ = ax_pie.pie(
-            wedge_props,
-            colors=data["colours"].tolist(),
-            startangle=90,
-            wedgeprops=dict(width=0.55, edgecolor=FIGURE_BG, linewidth=1.5)
-        )
-        ax_pie.set_title("Colour Composition", color=TEXT_COLOR,
-                         fontsize=10, pad=6)
+        # Important colours (saliency + contrast + rarity based)
+        important_colors = data.get("important_colors", [])
+        if important_colors:
+            n_imp = len(important_colors)
+            y_pos_imp = np.arange(n_imp)
+            
+            # Get RGB colors and importance scores
+            imp_rgb_colors = [c["rgb"] for c in important_colors]
+            imp_scores = np.array([c["importance"] for c in important_colors]) * progress
+            
+            bars_imp = ax_important.barh(y_pos_imp, imp_scores, 
+                                         color=imp_rgb_colors,
+                                         edgecolor="#393836", linewidth=0.5)
+            
+            # Labels with importance scores
+            labels_imp = [f"{i+1}. {s:.2f}" for i, s in enumerate(important_colors[j]["importance"] for j in range(n_imp))]
+            ax_important.set_yticks(y_pos_imp)
+            ax_important.set_yticklabels(labels_imp, color=TEXT_COLOR, fontsize=7)
+            ax_important.set_xlim(0, 1.0)
+            ax_important.set_xlabel("Importance", color=TEXT_COLOR, fontsize=8)
+            ax_important.tick_params(colors=TEXT_COLOR, labelsize=7)
+            ax_important.set_title("Important Colours", color=TEXT_COLOR, fontsize=10, pad=6)
+            ax_important.invert_yaxis()
+            for spine in ax_important.spines.values():
+                spine.set_edgecolor("#393836")
 
         # progress indicator (dots below figure)
         fig.texts = [t for t in fig.texts if t.get_text().startswith("Edvard")]
