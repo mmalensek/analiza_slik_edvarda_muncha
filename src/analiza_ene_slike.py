@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-Analiz barv slik Edvarda Muncha z uporabo k-means algoritma za pridobivanje dominantnih barv.
+Analiza ene slike (ali range slik) Edvarda Muncha:
+- dominantne barve (K-means)
+- pomembne barve (saliency + rarity + saturation)
+- robovi / tekstura (Sobel, Laplacian)
 
-Usage: analiza_barv.py [slika1.jpg] [slika2.jpg] ...
+Usage: analiza_ene_slike.py [slika1.jpg] [slika2.jpg] ...
+       analiza_ene_slike.py --start 1 --end 20
 """
 
 import argparse
@@ -14,13 +18,15 @@ import matplotlib.patches as mpatches
 import matplotlib.animation as animation
 from matplotlib.colors import to_hex
 from sklearn.cluster import KMeans
+from scipy import ndimage as ndi
 import warnings
 warnings.filterwarnings("ignore")
 
-# Import important colors analysis
+# Import analysis modules
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "analize"))
-from color_analysis import extract_important_colors
+from analize.color_analysis import extract_important_colors, compute_saliency
+from analize.edge_analysis import compute_texture_metrics
 
 # configuration
 N_COLORS = 8          # dominant colours to extract per painting
@@ -109,8 +115,18 @@ def rgb_to_hsv(r, g, b):
         h = 60 * ((r - g) / diff + 4)
     return h, s, v
 
+def compute_edge_map(pixels):
+    """Compute edge magnitude map using Sobel."""
+    gray = np.dot(pixels[..., :3], [0.299, 0.587, 0.114]) / 255.0
+    sx = ndi.sobel(gray, axis=0, mode="reflect")
+    sy = ndi.sobel(gray, axis=1, mode="reflect")
+    edges = np.hypot(sx, sy)
+    if edges.max() > 0:
+        edges = edges / edges.max()
+    return edges
+
 def analyse_painting(path: str):
-    """Load image → extract colours → return dict of results."""
+    """Load image → extract colours, important colours, texture → return dict of results."""
     print(f"  Analysing: {os.path.basename(path)} …")
     pixels = load_and_resize(path)
     
@@ -126,6 +142,17 @@ def analyse_painting(path: str):
         print(f"    Warning: Could not extract important colors: {e}")
         important_colors = []
     
+    # Texture metrics
+    try:
+        texture = compute_texture_metrics(pixels)
+        saliency = compute_saliency(pixels)
+        edges = compute_edge_map(pixels)
+    except Exception as e:
+        print(f"    Warning: Could not compute texture: {e}")
+        texture = {}
+        saliency = np.zeros_like(pixels[:, :, 0])
+        edges = np.zeros_like(pixels[:, :, 0])
+    
     return {
         "title": os.path.splitext(os.path.basename(path))[0].replace("_", " ").title(),
         "path": path,
@@ -136,6 +163,10 @@ def analyse_painting(path: str):
         "hex_codes": hex_codes,
         # Important colours
         "important_colors": important_colors,
+        # Texture
+        "texture": texture,
+        "saliency": saliency,
+        "edges": edges,
     }
 
 # Visualization
@@ -143,19 +174,26 @@ def analyse_painting(path: str):
 def animate_analyses(analyses):
     """Build an animated matplotlib figure cycling through paintings."""
     n_paintings = len(analyses)
-    fig = plt.figure(figsize=(14, 8), facecolor=FIGURE_BG)
-    fig.suptitle("Edvard Munch: Barvna analiza", color=TEXT_COLOR,
-                 fontsize=16, fontweight="bold", y=0.97)
+    fig = plt.figure(figsize=(16, 10), facecolor=FIGURE_BG)
+    fig.suptitle("Edvard Munch: Analiza barv in teksture", color=TEXT_COLOR,
+                 fontsize=16, fontweight="bold", y=0.98)
 
-    # axes layout
-    ax_img      = fig.add_axes([0.03, 0.08, 0.32, 0.78])   # painting preview
-    ax_bar      = fig.add_axes([0.40, 0.08, 0.26, 0.78])   # dominant colours
-    ax_important = fig.add_axes([0.70, 0.08, 0.27, 0.78])  # important colours
+    # axes layout - 2x3 grid with better spacing
+    ax_img       = fig.add_axes([0.02, 0.50, 0.27, 0.40])   # painting preview (top-left)
+    ax_bar       = fig.add_axes([0.34, 0.50, 0.27, 0.40])   # dominant colours (top-middle)
+    ax_important = fig.add_axes([0.66, 0.50, 0.27, 0.40])   # important colours (top-right)
+    
+    ax_saliency  = fig.add_axes([0.02, 0.04, 0.27, 0.40])   # saliency map (bottom-left)
+    ax_edges     = fig.add_axes([0.34, 0.04, 0.27, 0.40])   # edges map (bottom-middle)
+    ax_texture   = fig.add_axes([0.66, 0.04, 0.27, 0.40])   # texture metrics (bottom-right)
 
-    for ax in [ax_img, ax_bar, ax_important]:
+    for ax in [ax_img, ax_bar, ax_important, ax_saliency, ax_edges, ax_texture]:
         ax.set_facecolor(FIGURE_BG)
         for spine in ax.spines.values():
             spine.set_edgecolor("#393836")
+
+    # Add bottom margin for texture labels
+    fig.subplots_adjust(bottom=0.3)
 
     # prepare frame data
     frame_data = []
@@ -165,14 +203,14 @@ def animate_analyses(analyses):
 
     def draw_frame(idx):
         data, tick = frame_data[idx]
-        # progress goes from 0 to 1 over the first 20 ticks
-        # then stays at 1 for the remaining ticks
         progress = min(tick / 20, 1.0)
 
         # clear axes for redraw
-        ax_img.cla(); ax_bar.cla(); ax_important.cla()
-        for ax in [ax_img, ax_bar, ax_important]:
+        for ax in [ax_img, ax_bar, ax_important, ax_saliency, ax_edges, ax_texture]:
+            ax.cla()
             ax.set_facecolor(FIGURE_BG)
+
+        # ============ TOP ROW ============
 
         # painting image (fade in)
         try:
@@ -183,7 +221,7 @@ def animate_analyses(analyses):
         ax_img.axis("off")
         ax_img.set_title(data["title"], color=TEXT_COLOR, fontsize=11, pad=6)
 
-        # bar chart (animated widths)
+        # dominant colours bar chart (animated widths)
         n = len(data["colours"])
         y_pos = np.arange(n)
         widths = data["proportions"] * 100 * progress   # animate bar growth
@@ -192,7 +230,7 @@ def animate_analyses(analyses):
                            edgecolor="#393836", linewidth=0.5)
         ax_bar.set_yticks(y_pos)
         ax_bar.set_yticklabels(
-            [f"{data['names'][i]}  {data['hex_codes'][i]}"
+            [f"{data['names'][i]}"
              for i in range(n)],
             color=TEXT_COLOR, fontsize=8)
         ax_bar.set_xlim(0, 55)
@@ -224,8 +262,8 @@ def animate_analyses(analyses):
                                          color=imp_rgb_colors,
                                          edgecolor="#393836", linewidth=0.5)
             
-            # Labels with importance scores
-            labels_imp = [f"{i+1}. {s:.2f}" for i, s in enumerate(important_colors[j]["importance"] for j in range(n_imp))]
+            # Labels
+            labels_imp = [f"{i+1}. {important_colors[i]['importance']:.3f}" for i in range(n_imp)]
             ax_important.set_yticks(y_pos_imp)
             ax_important.set_yticklabels(labels_imp, color=TEXT_COLOR, fontsize=7)
             ax_important.set_xlim(0, 1.0)
@@ -235,6 +273,54 @@ def animate_analyses(analyses):
             ax_important.invert_yaxis()
             for spine in ax_important.spines.values():
                 spine.set_edgecolor("#393836")
+
+        # ============ BOTTOM ROW ============
+
+        # Saliency map (gradient magnitude heatmap)
+        if data.get("saliency") is not None and data["saliency"].size > 0:
+            saliency_display = plt.cm.hot(data["saliency"])
+            ax_saliency.imshow(saliency_display, alpha=progress)
+        ax_saliency.axis("off")
+        ax_saliency.set_title("Saliency (edges/contrast)", color=TEXT_COLOR, fontsize=10, pad=6)
+
+        # Edge magnitude map
+        if data.get("edges") is not None and data["edges"].size > 0:
+            edges_display = plt.cm.gray(data["edges"])
+            ax_edges.imshow(edges_display, alpha=progress)
+        ax_edges.axis("off")
+        ax_edges.set_title("Edge Magnitude", color=TEXT_COLOR, fontsize=10, pad=6)
+
+        # Texture metrics bar chart
+        texture = data.get("texture", {})
+        if texture:
+            metrics = ["Mean Grad", "Std Grad", "Edge Dens", "Lapl Var"]
+            values = [
+                texture.get("mean_gradient", 0),
+                texture.get("std_gradient", 0),
+                texture.get("edge_density", 0) * 10,  # scale for visibility
+                texture.get("laplacian_variance", 0) / 100.0,  # scale down
+            ]
+            values = np.array(values) * progress
+            
+            colors_tex = ["#e85d75", "#f39c12", "#3498db", "#2ecc71"]
+            bars_tex = ax_texture.bar(range(len(metrics)), values, color=colors_tex,
+                                      edgecolor="#393836", linewidth=0.5)
+            ax_texture.set_xticks(range(len(metrics)))
+            ax_texture.set_xticklabels(metrics, color=TEXT_COLOR, fontsize=8, rotation=45, ha='right')
+            ax_texture.set_ylabel("Value", color=TEXT_COLOR, fontsize=8)
+            ax_texture.tick_params(colors=TEXT_COLOR, labelsize=7)
+            ax_texture.set_title("Texture Metrics", color=TEXT_COLOR, fontsize=10, pad=6)
+            
+            # Add value labels
+            for bar, val in zip(bars_tex, values):
+                height = bar.get_height()
+                if height > 0.02:
+                    ax_texture.text(bar.get_x() + bar.get_width()/2., height,
+                                   f'{val:.2f}',
+                                   ha='center', va='bottom', color=TEXT_COLOR, fontsize=7)
+        
+        for spine in ax_texture.spines.values():
+            spine.set_edgecolor("#393836")
 
         # progress indicator (dots below figure)
         fig.texts = [t for t in fig.texts if t.get_text().startswith("Edvard")]
@@ -259,18 +345,18 @@ def animate_analyses(analyses):
 
 # main
 def main():
-    print("\nBarvna analiza slik Edvarda Muncha")
-    print("-" * 40)
+    print("\nAnaliza slik Edvarda Muncha: barve + tekstura")
+    print("-" * 50)
 
     parser = argparse.ArgumentParser(
-        description="Analyse dominant colours in Munch paintings."
+        description="Analyse dominant colours, important colours, and texture in Munch paintings."
     )
     parser.add_argument("images", nargs="*", help="Optional explicit image paths.")
     parser.add_argument("--start", type=int, default=None,
                         help="Start of numeric image range (inclusive).")
     parser.add_argument("--end", type=int, default=None,
                         help="End of numeric image range (inclusive).")
-    parser.add_argument("--folder", default="../munch_paintings",
+    parser.add_argument("--folder", default="../../munch_paintings",
                         help="Folder containing numbered image files.")
     args = parser.parse_args()
 
