@@ -12,7 +12,7 @@ Slike so zbrane in dostopne na [kaggle spletni strani](https://www.kaggle.com/da
 
 ---
 
-Sorodna dela:
+**Sorodna dela:**
 
 [Large-Scale Quantitative Analysis of Painting Arts](https://pmc.ncbi.nlm.nih.gov/articles/PMC4263068/)
 - uporaba barv: kako pogosto se pojavijo specifične barve
@@ -23,8 +23,14 @@ Sorodna dela:
 - analiza vzorcev in barv neba na sliki "Krik"
 ---
 
-Rezultat prototipa:
-![Rezultat prototipa](./rezultati_tmp/slike_analiza.png)
+**Rezultat časovne analize:**
+
+Barva analiza
+![Barve](./rezultati_tmp/slike_analiza.png)
+
+Analiza robov in ravnih linij/krivulj
+
+![Robovi](./rezultati_tmp/temporal_texture_line-curve_trends.png)
 
 ---
 
