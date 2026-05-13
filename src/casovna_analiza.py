@@ -182,6 +182,13 @@ def compute_trends(yearly_data, mode="both"):
             "std_gradient": [],
             "edge_density": [],
             "laplacian_variance": [],
+            "num_lines": [],
+            "mean_line_length": [],
+            "line_support_ratio": [],
+            "curve_edge_ratio": [],
+            "orientation_entropy": [],
+            "dominant_orientation_strength": [],
+            "curvature_index": [],
         }
 
     for y in years:
@@ -216,46 +223,76 @@ def compute_trends(yearly_data, mode="both"):
                 sg = np.mean([t["std_gradient"] for t in textures])
                 ed = np.mean([t["edge_density"] for t in textures])
                 lv = np.mean([t["laplacian_variance"] for t in textures])
+                nl = np.mean([t.get("num_lines", np.nan) for t in textures])
+                ml = np.mean([t.get("mean_line_length", np.nan) for t in textures])
+                ls = np.mean([t.get("line_support_ratio", np.nan) for t in textures])
+                cr = np.mean([t.get("curve_edge_ratio", np.nan) for t in textures])
+                oe = np.mean([t.get("orientation_entropy", np.nan) for t in textures])
+                ds = np.mean([t.get("dominant_orientation_strength", np.nan) for t in textures])
+                ci = np.mean([t.get("curvature_index", np.nan) for t in textures])
             else:
-                mg = sg = ed = lv = np.nan
+                mg = sg = ed = lv = nl = ml = ls = cr = oe = ds = ci = np.nan
 
             texture_trends["mean_gradient"].append(mg)
             texture_trends["std_gradient"].append(sg)
             texture_trends["edge_density"].append(ed)
             texture_trends["laplacian_variance"].append(lv)
+            texture_trends["num_lines"].append(nl)
+            texture_trends["mean_line_length"].append(ml)
+            texture_trends["line_support_ratio"].append(ls)
+            texture_trends["curve_edge_ratio"].append(cr)
+            texture_trends["orientation_entropy"].append(oe)
+            texture_trends["dominant_orientation_strength"].append(ds)
+            texture_trends["curvature_index"].append(ci)
 
     return years, color_trends, texture_trends
 
 # ---------------- VISUALIZATION ----------------
 def plot_trends(years, color_trends=None, texture_trends=None, mode="both"):
     if mode in ("color", "both") and color_trends is not None:
-        plt.figure(figsize=(12, 6))
-        plt.plot(years, color_trends["brightness"], label="Brightness")
-        plt.plot(years, color_trends["warmth"], label="Warmth (Red - Blue)")
-        plt.plot(years, color_trends["saturation"], label="Saturation")
-        plt.plot(years, color_trends["entropy"], label="Colour Complexity (Entropy)")
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(years, color_trends["brightness"], label="Brightness")
+        ax.plot(years, color_trends["warmth"], label="Warmth (Red - Blue)")
+        ax.plot(years, color_trends["saturation"], label="Saturation")
+        ax.plot(years, color_trends["entropy"], label="Colour Complexity (Entropy)")
 
-        plt.xlabel("Year")
-        plt.ylabel("Value")
-        plt.title("Temporal Colour Evolution")
-        plt.legend()
-        plt.grid(alpha=0.2)
-
+        ax.set_xlabel("Year")
+        ax.set_ylabel("Value")
+        ax.set_title("Temporal Colour Evolution")
+        ax.legend()
+        ax.grid(alpha=0.2)
         plt.tight_layout()
         plt.show()
 
     if mode in ("edge", "both") and texture_trends is not None:
-        plt.figure(figsize=(12, 6))
-        plt.plot(years, texture_trends["mean_gradient"], label="Mean Gradient")
-        plt.plot(years, texture_trends["std_gradient"], label="Std Gradient")
-        plt.plot(years, texture_trends["edge_density"], label="Edge Density")
-        plt.plot(years, texture_trends["laplacian_variance"], label="Laplacian Variance")
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
 
-        plt.xlabel("Year")
-        plt.ylabel("Texture Metric")
-        plt.title("Temporal Texture / Edge Trends")
-        plt.legend()
-        plt.grid(alpha=0.2)
+        ax1.plot(years, texture_trends["mean_gradient"], label="Mean Gradient")
+        ax1.plot(years, texture_trends["std_gradient"], label="Std Gradient")
+        ax1.plot(years, texture_trends["edge_density"], label="Edge Density")
+        ax1.plot(years, texture_trends["laplacian_variance"], label="Laplacian Variance")
+        ax1.set_ylabel("Texture Metric")
+        ax1.set_title("Temporal Texture Trends")
+        ax1.legend()
+        ax1.grid(alpha=0.2)
+
+        ax2.plot(years, texture_trends["num_lines"], label="Number of Lines")
+        ax2.plot(years, texture_trends["mean_line_length"], label="Mean Line Length")
+        ax2.set_ylabel("Count / Length")
+        ax2.set_title("Temporal Straight Line Structure")
+        ax2.legend()
+        ax2.grid(alpha=0.2)
+
+        ax3.plot(years, texture_trends["line_support_ratio"], label="Line Support Ratio")
+        ax3.plot(years, texture_trends["curve_edge_ratio"], label="Curve Edge Ratio")
+        ax3.plot(years, texture_trends["orientation_entropy"], label="Orientation Entropy")
+        ax3.plot(years, texture_trends["dominant_orientation_strength"], label="Dominant Orientation Strength")
+        ax3.plot(years, texture_trends["curvature_index"], label="Curvature Index")
+        ax3.set_xlabel("Year")
+        ax3.set_ylabel("Normalized Metric")
+        ax3.set_title("Temporal Line / Curve Structure")
+        ax3.legend(ncol=2)
+        ax3.grid(alpha=0.2)
 
         plt.tight_layout()
         plt.show()

@@ -167,6 +167,7 @@ def analyse_painting(path: str):
         "texture": texture,
         "saliency": saliency,
         "edges": edges,
+        "hough_lines": texture.get("hough_lines", []) if texture else [],
     }
 
 # Visualization
@@ -191,9 +192,6 @@ def animate_analyses(analyses):
         ax.set_facecolor(FIGURE_BG)
         for spine in ax.spines.values():
             spine.set_edgecolor("#393836")
-
-    # Add bottom margin for texture labels
-    fig.subplots_adjust(bottom=0.3)
 
     # prepare frame data
     frame_data = []
@@ -287,29 +285,37 @@ def animate_analyses(analyses):
         if data.get("edges") is not None and data["edges"].size > 0:
             edges_display = plt.cm.gray(data["edges"])
             ax_edges.imshow(edges_display, alpha=progress)
+            # Overlay detected straight lines (Hough)
+            for (x0, y0), (x1, y1) in data.get("hough_lines", []):
+                ax_edges.plot([x0, x1], [y0, y1], color="#e53935", linewidth=1.0, alpha=0.8 * progress)
         ax_edges.axis("off")
-        ax_edges.set_title("Edge Magnitude", color=TEXT_COLOR, fontsize=10, pad=6)
+        ax_edges.set_title("Edge Magnitude + Straight Lines", color=TEXT_COLOR, fontsize=10, pad=6)
 
         # Texture metrics bar chart
         texture = data.get("texture", {})
         if texture:
-            metrics = ["Mean Grad", "Std Grad", "Edge Dens", "Lapl Var"]
+            metrics = ["Mean G", "Std G", "Edge D", "Lapl V", "Line Sup", "Curve R", "Ori Ent"]
             values = [
                 texture.get("mean_gradient", 0),
                 texture.get("std_gradient", 0),
-                texture.get("edge_density", 0) * 10,  # scale for visibility
-                texture.get("laplacian_variance", 0) / 100.0,  # scale down
+                texture.get("edge_density", 0),
+                texture.get("laplacian_variance", 0),
+                texture.get("line_support_ratio", 0),
+                texture.get("curve_edge_ratio", 0),
+                texture.get("orientation_entropy", 0),
             ]
-            values = np.array(values) * progress
+            # Scale to comparable visual ranges for bar chart readability
+            scales = np.array([2.5, 5.0, 1.0, 80.0, 1.0, 1.0, 1.0])
+            values = (np.array(values) * scales) * progress
             
-            colors_tex = ["#e85d75", "#f39c12", "#3498db", "#2ecc71"]
+            colors_tex = ["#e85d75", "#f39c12", "#3498db", "#2ecc71", "#4f98a3", "#8bc34a", "#9c27b0"]
             bars_tex = ax_texture.bar(range(len(metrics)), values, color=colors_tex,
                                       edgecolor="#393836", linewidth=0.5)
             ax_texture.set_xticks(range(len(metrics)))
-            ax_texture.set_xticklabels(metrics, color=TEXT_COLOR, fontsize=8, rotation=45, ha='right')
-            ax_texture.set_ylabel("Value", color=TEXT_COLOR, fontsize=8)
+            ax_texture.set_xticklabels(metrics, color=TEXT_COLOR, fontsize=7, rotation=35, ha='right')
+            ax_texture.set_ylabel("Scaled Value", color=TEXT_COLOR, fontsize=8)
             ax_texture.tick_params(colors=TEXT_COLOR, labelsize=7)
-            ax_texture.set_title("Texture Metrics", color=TEXT_COLOR, fontsize=10, pad=6)
+            ax_texture.set_title("Texture + Line/Curve Metrics", color=TEXT_COLOR, fontsize=10, pad=6)
             
             # Add value labels
             for bar, val in zip(bars_tex, values):
@@ -318,6 +324,20 @@ def animate_analyses(analyses):
                     ax_texture.text(bar.get_x() + bar.get_width()/2., height,
                                    f'{val:.2f}',
                                    ha='center', va='bottom', color=TEXT_COLOR, fontsize=7)
+
+            # Small textual summary for interpretation
+            straightness = texture.get("line_support_ratio", 0.0)
+            curviness = texture.get("curve_edge_ratio", 0.0)
+            dom_angle = texture.get("dominant_line_orientation_deg", 0.0)
+            ax_texture.text(
+                0.02,
+                0.96,
+                f"Straightness: {straightness:.2f} | Curviness: {curviness:.2f} | Dom angle: {dom_angle:.0f} deg",
+                transform=ax_texture.transAxes,
+                color=TEXT_COLOR,
+                fontsize=7,
+                va="top",
+            )
         
         for spine in ax_texture.spines.values():
             spine.set_edgecolor("#393836")
