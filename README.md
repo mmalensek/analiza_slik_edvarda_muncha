@@ -52,7 +52,7 @@ python3 casovna_analiza.py --start 1 --end 100 --mode edge
 ```
 
 Opombe:
-- Privzeti `--folder` je `../munch_paintings` in privzeti `--csv` je `edvard_munch.csv` 
+- Privzeti `--folder` je `../../munch_paintings` in privzeti `--csv` je `../data/edvard_munch.csv` 
 - `--mode` je lahko `color`, `edge`, ali `both`.
 
 
@@ -61,10 +61,10 @@ Opombe:
 Vizualizacija prevladajočih in najpomembnejših barv na posameznih slikah.
 
 ``` bash
-python3 analiza_barv.py --start 1 --end 10 --folder ../../munch_paintings
+python3 analiza_ene_slike.py --start 1 --end 10 --folder ../../munch_paintings
 ```
 
-#### Vizualizacija vmesnih korakov pri tej analizi
+#### Vizualizacija vmesnih korakov pri tej analizi - pomembne barve
 
 ``` bash
 python3 visualize_superpixels.py --sample
