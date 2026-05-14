@@ -106,10 +106,8 @@ def _filter_lines(lines, gray, grad, sx, sy, min_score=0.48):
         if score >= min_score:
             scored.append((line, score))
 
-    # Keep best lines only (avoid clutter in painterly textures)
     scored.sort(key=lambda x: x[1], reverse=True)
-    max_keep = 25
-    return [line for line, _ in scored[:max_keep]]
+    return [line for line, _ in scored]
 
 
 def detect_line_segments(pixels):

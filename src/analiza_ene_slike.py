@@ -15,7 +15,6 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import matplotlib.animation as animation
 from matplotlib.colors import to_hex
 from sklearn.cluster import KMeans
 from scipy import ndimage as ndi
@@ -173,7 +172,7 @@ def analyse_painting(path: str):
 # Visualization
 
 def animate_analyses(analyses):
-    """Build an animated matplotlib figure cycling through paintings."""
+    """Build an interactive matplotlib figure navigated with left/right keys."""
     n_paintings = len(analyses)
     fig = plt.figure(figsize=(16, 10), facecolor=FIGURE_BG)
     fig.suptitle("Edvard Munch: Analiza barv in teksture", color=TEXT_COLOR,
@@ -193,15 +192,18 @@ def animate_analyses(analyses):
         for spine in ax.spines.values():
             spine.set_edgecolor("#393836")
 
-    # prepare frame data
-    frame_data = []
-    for a in analyses:
-        for repeat in range(60):   # ~3 s at 20 fps
-            frame_data.append((a, repeat))
+    state = {"index": 0}
+    status_text = fig.text(
+        0.5,
+        0.01,
+        "",
+        ha="center",
+        color=ACCENT,
+        fontsize=12,
+    )
 
     def draw_frame(idx):
-        data, tick = frame_data[idx]
-        progress = min(tick / 20, 1.0)
+        data = analyses[idx]
 
         # clear axes for redraw
         for ax in [ax_img, ax_bar, ax_important, ax_saliency, ax_edges, ax_texture]:
@@ -213,16 +215,16 @@ def animate_analyses(analyses):
         # painting image (fade in)
         try:
             img_arr = load_and_resize(data["path"], 300)
-            ax_img.imshow(img_arr, alpha=min(progress * 2, 1))
+            ax_img.imshow(img_arr)
         except Exception:
             ax_img.set_facecolor("#2d2c2a")
         ax_img.axis("off")
         ax_img.set_title(data["title"], color=TEXT_COLOR, fontsize=11, pad=6)
 
-        # dominant colours bar chart (animated widths)
+        # dominant colours bar chart
         n = len(data["colours"])
         y_pos = np.arange(n)
-        widths = data["proportions"] * 100 * progress   # animate bar growth
+        widths = data["proportions"] * 100
 
         bars = ax_bar.barh(y_pos, widths, color=data["colours"].tolist(),
                            edgecolor="#393836", linewidth=0.5)
@@ -240,7 +242,7 @@ def animate_analyses(analyses):
             spine.set_edgecolor("#393836")
 
         # add percentage labels
-        for bar, pct in zip(bars, data["proportions"] * 100 * progress):
+        for bar, pct in zip(bars, data["proportions"] * 100):
             if pct > 1.5:
                 ax_bar.text(pct + 0.3, bar.get_y() + bar.get_height()/2,
                             f"{pct:.1f}%", va="center", color=TEXT_COLOR,
@@ -254,7 +256,7 @@ def animate_analyses(analyses):
             
             # Get RGB colors and importance scores
             imp_rgb_colors = [c["rgb"] for c in important_colors]
-            imp_scores = np.array([c["importance"] for c in important_colors]) * progress
+            imp_scores = np.array([c["importance"] for c in important_colors])
             
             bars_imp = ax_important.barh(y_pos_imp, imp_scores, 
                                          color=imp_rgb_colors,
@@ -277,17 +279,17 @@ def animate_analyses(analyses):
         # Saliency map (gradient magnitude heatmap)
         if data.get("saliency") is not None and data["saliency"].size > 0:
             saliency_display = plt.cm.hot(data["saliency"])
-            ax_saliency.imshow(saliency_display, alpha=progress)
+            ax_saliency.imshow(saliency_display)
         ax_saliency.axis("off")
         ax_saliency.set_title("Saliency (edges/contrast)", color=TEXT_COLOR, fontsize=10, pad=6)
 
         # Edge magnitude map
         if data.get("edges") is not None and data["edges"].size > 0:
             edges_display = plt.cm.gray(data["edges"])
-            ax_edges.imshow(edges_display, alpha=progress)
+            ax_edges.imshow(edges_display)
             # Overlay detected straight lines (Hough)
             for (x0, y0), (x1, y1) in data.get("hough_lines", []):
-                ax_edges.plot([x0, x1], [y0, y1], color="#e53935", linewidth=1.0, alpha=0.8 * progress)
+                ax_edges.plot([x0, x1], [y0, y1], color="#e53935", linewidth=1.0, alpha=0.8)
         ax_edges.axis("off")
         ax_edges.set_title("Edge Magnitude + Straight Lines", color=TEXT_COLOR, fontsize=10, pad=6)
 
@@ -306,7 +308,7 @@ def animate_analyses(analyses):
             ]
             # Scale to comparable visual ranges for bar chart readability
             scales = np.array([2.5, 5.0, 1.0, 80.0, 1.0, 1.0, 1.0])
-            values = (np.array(values) * scales) * progress
+            values = np.array(values) * scales
             
             colors_tex = ["#e85d75", "#f39c12", "#3498db", "#2ecc71", "#4f98a3", "#8bc34a", "#9c27b0"]
             bars_tex = ax_texture.bar(range(len(metrics)), values, color=colors_tex,
@@ -342,25 +344,23 @@ def animate_analyses(analyses):
         for spine in ax_texture.spines.values():
             spine.set_edgecolor("#393836")
 
-        # progress indicator (dots below figure)
-        fig.texts = [t for t in fig.texts if t.get_text().startswith("Edvard")]
-        pidx = analyses.index(data)
-        dots = "  ".join(
-            ("O" if i == pidx else "I") for i in range(n_paintings)
-        )
-        fig.text(0.5, 0.01, dots, ha="center", color=ACCENT, fontsize=14)
+        dots = "  ".join(("O" if i == idx else "I") for i in range(n_paintings))
+        status_text.set_text(f"{dots}\nUse left/right arrow keys to move between images")
+        fig.canvas.draw_idle()
 
         return []
 
-    ani = animation.FuncAnimation(
-        fig,
-        draw_frame,
-        frames=len(frame_data),
-        interval=50,   # 20 fps
-        blit=False,
-        repeat=True
-    )
-    return fig, ani
+    def on_key(event):
+        if event.key == "right":
+            state["index"] = min(state["index"] + 1, n_paintings - 1)
+            draw_frame(state["index"])
+        elif event.key == "left":
+            state["index"] = max(state["index"] - 1, 0)
+            draw_frame(state["index"])
+
+    fig.canvas.mpl_connect("key_press_event", on_key)
+    draw_frame(0)
+    return fig, None
 
 
 # main
@@ -403,7 +403,7 @@ def main():
     analyses = [analyse_painting(p) for p in paths]
 
     print("\nLaunching animated visualisation:")
-    print("(Close the window to exit, or press Q)")
+    print("(Use left/right arrow keys to move between paintings, then close the window to exit)")
     fig, ani = animate_analyses(analyses)
     plt.show()
     print("Done.")
