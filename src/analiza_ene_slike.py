@@ -147,12 +147,12 @@ def analyse_painting(path: str):
     # Important colours - clusterirane verzije za paletu
     if important_colors:
         try:
-            # Extract RGB and importance scores
+            # Extract RGB and area fractions (coverage)
             important_rgb = np.array([c["rgb"] for c in important_colors])
-            important_scores = np.array([c["importance"] for c in important_colors])
+            important_areas = np.array([c["area_frac"] for c in important_colors])
             # Cluster similar colors
-            important_clustered, important_scores_clustered = cluster_similar_colors(
-                important_rgb, important_scores, lab_threshold=15.0
+            important_clustered, important_areas_clustered = cluster_similar_colors(
+                important_rgb, important_areas, lab_threshold=15.0
             )
         except Exception as e:
             print(f"    Warning: Could not cluster important colors: {e}")
@@ -160,7 +160,7 @@ def analyse_painting(path: str):
             important_scores_clustered = np.array([])
     else:
         important_clustered = np.array([])
-        important_scores_clustered = np.array([])
+        important_areas_clustered = np.array([])
     
     # Merge CLUSTERIRANE dominant i important u unified palette sa labelima
     color_palette = []
@@ -172,7 +172,7 @@ def analyse_painting(path: str):
             "source": "dominant",
         })
     # Add clusterirane important colors (avoid exact duplicates)
-    for rgb, score in zip(important_clustered, important_scores_clustered):
+    for rgb, area in zip(important_clustered, important_areas_clustered):
         # Check if very similar color already exists
         is_duplicate = False
         for existing in color_palette:
@@ -182,7 +182,7 @@ def analyse_painting(path: str):
         if not is_duplicate:
             color_palette.append({
                 "rgb": rgb,
-                "frequency": score,  # Use importance score as frequency proxy
+                "frequency": area,  # Use area coverage as frequency metric
                 "source": "important",
             })
     
@@ -233,7 +233,8 @@ def animate_analyses(analyses):
     ax_bar       = fig.add_axes([0.36, 0.52, 0.26, 0.38])   # dominant colours (top-middle)
     ax_important = fig.add_axes([0.68, 0.52, 0.26, 0.38])   # important colours (top-right)
     
-    ax_palette   = fig.add_axes([0.04, 0.11, 0.92, 0.33])   # unified color palette (bottom-full-width)
+    ax_palette   = fig.add_axes([0.04, 0.05, 0.44, 0.38])   # unified color palette bar (bottom-left)
+    ax_palette_grid = fig.add_axes([0.52, 0.05, 0.44, 0.38])   # unified color palette grid (bottom-right)
     
     # TEXTURE ANALYSIS PAGE axes (spread out)
     ax_saliency  = fig.add_axes([0.04, 0.52, 0.42, 0.38])   # saliency map (top-left, larger)
@@ -241,12 +242,12 @@ def animate_analyses(analyses):
     ax_texture   = fig.add_axes([0.04, 0.09, 0.92, 0.38])   # texture metrics (bottom-full-width)
 
     # Color analysis axes
-    color_axes = [ax_img, ax_bar, ax_important, ax_palette]
+    color_axes = [ax_img, ax_bar, ax_important, ax_palette, ax_palette_grid]
     # Texture analysis axes
     texture_axes = [ax_saliency, ax_edges, ax_texture]
     
     # Setup styling for all axes
-    for ax in [ax_img, ax_bar, ax_important, ax_palette, ax_saliency, ax_edges, ax_texture]:
+    for ax in [ax_img, ax_bar, ax_important, ax_palette, ax_palette_grid, ax_saliency, ax_edges, ax_texture]:
         ax.set_facecolor(FIGURE_BG)
         for spine in ax.spines.values():
             spine.set_edgecolor("#393836")
@@ -277,7 +278,7 @@ def animate_analyses(analyses):
                 ax.set_visible(True)
 
         # clear all axes for redraw
-        for ax in [ax_img, ax_bar, ax_important, ax_palette, ax_saliency, ax_edges, ax_texture]:
+        for ax in [ax_img, ax_bar, ax_important, ax_palette, ax_palette_grid, ax_saliency, ax_edges, ax_texture]:
             ax.cla()
             ax.set_facecolor(FIGURE_BG)
 
@@ -319,26 +320,26 @@ def animate_analyses(analyses):
                                 f"{pct:.1f}%", va="center", color=TEXT_COLOR,
                                 fontsize=7)
 
-            # Important colours (saliency + contrast + rarity based)
+            # Important colours (area coverage based)
             important_colors = data.get("important_colors", [])
             if important_colors:
                 n_imp = len(important_colors)
                 y_pos_imp = np.arange(n_imp)
                 
-                # Get RGB colors and importance scores
+                # Get RGB colors and area fractions (coverage)
                 imp_rgb_colors = [c["rgb"] for c in important_colors]
-                imp_scores = np.array([c["importance"] for c in important_colors])
+                imp_areas = np.array([c["area_frac"] for c in important_colors])
                 
-                bars_imp = ax_important.barh(y_pos_imp, imp_scores, 
+                bars_imp = ax_important.barh(y_pos_imp, imp_areas * 100, 
                                              color=imp_rgb_colors,
                                              edgecolor="#393836", linewidth=0.5)
                 
                 # Labels
-                labels_imp = [f"{i+1}. {important_colors[i]['importance']:.3f}" for i in range(n_imp)]
+                labels_imp = [f"{i+1}. {important_colors[i]['area_frac']*100:.1f}%" for i in range(n_imp)]
                 ax_important.set_yticks(y_pos_imp)
                 ax_important.set_yticklabels(labels_imp, color=TEXT_COLOR, fontsize=7)
-                ax_important.set_xlim(0, 1.0)
-                ax_important.set_xlabel("Importance", color=TEXT_COLOR, fontsize=8)
+                ax_important.set_xlim(0, max(imp_areas * 100) * 1.15 if len(imp_areas) > 0 else 10)
+                ax_important.set_xlabel("Area Coverage (%)", color=TEXT_COLOR, fontsize=8)
                 ax_important.tick_params(colors=TEXT_COLOR, labelsize=7)
                 ax_important.set_title("Important Colours", color=TEXT_COLOR, fontsize=10, pad=6)
                 ax_important.invert_yaxis()
@@ -368,10 +369,58 @@ def animate_analyses(analyses):
                 ax_palette.set_yticklabels(labels_palette, color=TEXT_COLOR, fontsize=8)
                 ax_palette.set_xlabel("Frequency / Importance", color=TEXT_COLOR, fontsize=9)
                 ax_palette.tick_params(colors=TEXT_COLOR, labelsize=8)
-                ax_palette.set_title("Unified Color Palette", color=TEXT_COLOR, fontsize=11, pad=6, fontweight="bold")
                 ax_palette.invert_yaxis()
                 for spine in ax_palette.spines.values():
                     spine.set_edgecolor("#393836")
+
+            # ============ UNIFIED COLOR PALETTE (GRID VIEW) ============
+            color_palette = data.get("color_palette", [])
+            if color_palette:
+                palette_colors = [c["rgb"] for c in color_palette]
+                palette_sources = [c["source"] for c in color_palette]
+                
+                n_palette = len(palette_colors)
+                
+                # Arrange colors in a grid (calculate grid dimensions)
+                cols = min(8, max(4, int(np.sqrt(n_palette) * 1.5)))  # flexible columns
+                rows = int(np.ceil(n_palette / cols))
+                
+                # Draw colored squares in grid
+                square_width = 1.0 / cols
+                square_height = 1.0 / rows
+                
+                for idx, rgb in enumerate(palette_colors):
+                    row = idx // cols
+                    col = idx % cols
+                    
+                    # Position in 0-1 normalized coordinates
+                    x = col * square_width
+                    y = 1.0 - (row + 1) * square_height  # top-down
+                    
+                    # Draw rectangle (color square)
+                    rect = plt.Rectangle(
+                        (x, y), square_width * 0.95, square_height * 0.95,
+                        facecolor=rgb, edgecolor="#555", linewidth=1.0,
+                        transform=ax_palette_grid.transAxes, zorder=10
+                    )
+                    ax_palette_grid.add_patch(rect)
+                    
+                    # Add label: color number + source abbreviation
+                    ax_palette_grid.text(
+                        x + square_width * 0.475, y + square_height * 0.5,
+                        f"{idx+1}",
+                        ha="center", va="center", fontsize=7,
+                        color="white" if np.mean(rgb) < 0.5 else "black",
+                        weight="bold", transform=ax_palette_grid.transAxes, zorder=11
+                    )
+                
+                ax_palette_grid.set_xlim(0, 1)
+                ax_palette_grid.set_ylim(0, 1)
+                ax_palette_grid.axis("off")
+                
+                # Add common title above both palette plots
+                fig.text(0.5, 0.46, "Unified Color Palette", ha="center", color=TEXT_COLOR, 
+                         fontsize=12, fontweight="bold")
 
         # ============ TEXTURE ANALYSIS PAGE ============
         else:
