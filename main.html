@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Edvard Munch Timeline</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Inter, system-ui, sans-serif;
+      background: #0d1612;
+      color: white;
+      overflow-x: hidden;
+    }
+
+    .hero {
+      padding: 60px 40px 30px;
+      text-align: center;
+      background:
+        radial-gradient(circle at top left, rgba(255,255,255,0.08), transparent 30%),
+        linear-gradient(135deg, #132019, #0b120e);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 5vw, 5rem);
+      font-weight: 800;
+      letter-spacing: -2px;
+      margin-bottom: 12px;
+    }
+
+    .hero p {
+      max-width: 700px;
+      margin: 0 auto;
+      color: rgba(255,255,255,0.7);
+      line-height: 1.7;
+      font-size: 1.05rem;
+    }
+
+    .timeline-wrapper {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(13,22,18,0.95);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      overflow-x: auto;
+    }
+
+    .timeline {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 0;
+      padding: 40px 60px;
+      min-width: max-content;
+      position: relative;
+    }
+
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 60px;
+      right: 60px;
+      top: 50%;
+      height: 8px;
+      background: linear-gradient(90deg, #4f6b57, #79a87f, #9dd6a8);
+      transform: translateY(-50%);
+      border-radius: 999px;
+      opacity: 0.9;
+    }
+
+    .year-btn {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      border: 4px solid rgba(157, 214, 168, 0.35);
+      background: #16231b;
+      color: #d8f0dd;
+      cursor: pointer;
+      transition: 0.3s ease;
+      font-weight: 800;
+      font-size: 1.4rem;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      margin-right: 60px;
+    }
+
+    .year-btn::after {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #9dd6a8;
+      bottom: -32px;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 4px solid #0d1612;
+    }
+
+    .year-btn::before {
+      content: '';
+      position: absolute;
+      width: 4px;
+      height: 34px;
+      background: rgba(157,214,168,0.4);
+      bottom: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .year-btn:hover {
+      transform: translateY(-10px) scale(1.05);
+      border-color: rgba(157,214,168,0.7);
+      background: #1d3024;
+      color: white;
+    }
+
+    .year-btn.active {
+      background: #9dd6a8;
+      color: #102015;
+      border-color: #d8f0dd;
+      transform: scale(1.08);
+      box-shadow: 0 12px 40px rgba(157,214,168,0.28);
+    }
+
+    .gallery-container {
+      padding: 35px;
+    }
+
+    .gallery-header {
+      margin-bottom: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .gallery-header h2 {
+      font-size: 2rem;
+      font-weight: 800;
+    }
+
+    .gallery-header span {
+      color: rgba(255,255,255,0.6);
+      font-weight: 500;
+    }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 24px;
+    }
+
+    .card {
+      background: rgba(126, 211, 150, 0.05);
+      border: 1px solid rgba(126, 211, 150, 0.12);
+      border-radius: 24px;
+      overflow: hidden;
+      transition: 0.3s ease;
+      position: relative;
+    }
+
+    .card:hover {
+      transform: translateY(-8px);
+      border-color: rgba(255,255,255,0.16);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+
+    .card img {
+      width: 100%;
+      height: 340px;
+      object-fit: cover;
+      display: block;
+      background: #111;
+    }
+
+    .card-content {
+      padding: 16px;
+    }
+
+    .painting-id {
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.55);
+      margin-bottom: 6px;
+    }
+
+    .painting-year {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 60px;
+      color: rgba(255,255,255,0.6);
+      font-size: 1.1rem;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 80px 20px;
+      color: rgba(255,255,255,0.55);
+    }
+
+    @media (max-width: 768px) {
+      .hero {
+        padding: 40px 20px 20px;
+      }
+
+      .gallery-container {
+        padding: 20px;
+      }
+
+      .card img {
+        height: 280px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <section class="hero">
+    <h1>Edvard Munch</h1>
+    <p>
+      Explore Edvard Munch's artistic journey through an interactive timeline.
+      Click a year to instantly browse paintings from that period.
+    </p>
+  </section>
+
+  <div class="timeline-wrapper">
+    <div class="timeline" id="timeline"></div>
+  </div>
+
+  <main class="gallery-container">
+    <div class="gallery-header">
+      <div>
+        <h2 id="yearTitle">Loading...</h2>
+        <span id="paintingCount"></span>
+      </div>
+    </div>
+
+    <div id="gallery" class="gallery"></div>
+    <div id="loading" class="loading">Loading paintings...</div>
+  </main>
+
+  <script>
+    const csvPath = 'data/edvard_munch_cleaned.csv';
+    const imageBasePath = '../munch_paintings/';
+
+    const timelineEl = document.getElementById('timeline');
+    const galleryEl = document.getElementById('gallery');
+    const loadingEl = document.getElementById('loading');
+    const yearTitleEl = document.getElementById('yearTitle');
+    const paintingCountEl = document.getElementById('paintingCount');
+
+    let paintingsByYear = {};
+    let allYears = [];
+    let activeYear = null;
+
+    async function loadCSV() {
+      Papa.parse(csvPath, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+
+        complete: async function(results) {
+          const rows = results.data;
+
+          for (const row of rows) {
+            const id = row.number;
+            const year = row.year;
+            const title = row.name || 'Untitled';
+            const technique = row.technique || '';
+            const location = row.location || '';
+
+            if (!id || !year) continue;
+
+            const imagePath = `${imageBasePath}${id}.jpg`;
+
+            // Do not preload/check image existence here.
+            // Loading happens lazily in the gallery for much faster startup.
+
+            if (!paintingsByYear[year]) {
+              paintingsByYear[year] = [];
+            }
+
+            paintingsByYear[year].push({
+              id,
+              year,
+              title,
+              technique,
+              location,
+              imagePath
+            });
+          }
+
+          allYears = Object.keys(paintingsByYear)
+            .sort((a, b) => Number(a) - Number(b));
+
+          renderTimeline();
+
+          // Preselect middle timeline year for better initial view
+          const middleIndex = Math.floor(allYears.length / 2);
+          timelineEl.scrollLeft = middleIndex * 160;
+
+          if (allYears.length > 0) {
+            setActiveYear(allYears[0]);
+          }
+
+          loadingEl.style.display = 'none';
+        }
+      });
+    }
+
+    function renderTimeline() {
+      timelineEl.innerHTML = '';
+
+      allYears.forEach((year) => {
+        const btn = document.createElement('button');
+        btn.className = 'year-btn';
+        btn.textContent = year;
+
+        btn.addEventListener('click', () => {
+          setActiveYear(year);
+        });
+
+        timelineEl.appendChild(btn);
+      });
+    }
+
+    function setActiveYear(year) {
+      activeYear = year;
+
+      document.querySelectorAll('.year-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.textContent === year);
+      });
+
+      renderGallery(year);
+    }
+
+    function renderGallery(year) {
+      galleryEl.innerHTML = '';
+
+      const paintings = paintingsByYear[year] || [];
+
+      yearTitleEl.textContent = year;
+      paintingCountEl.textContent = `${paintings.length} painting${paintings.length !== 1 ? 's' : ''}`;
+
+      if (paintings.length === 0) {
+        galleryEl.innerHTML = `
+          <div class="empty">
+            No paintings found for this year.
+          </div>
+        `;
+        return;
+      }
+
+      paintings.forEach((painting) => {
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        card.innerHTML = `
+          <img
+              src="${painting.imagePath}"
+              alt="Edvard Munch painting ${painting.id}"
+              loading="lazy"
+              onerror="this.style.display='none'"
+            >
+
+          <div class="card-content">
+            <div class="painting-id">#${painting.id}</div>
+            <div class="painting-year">${painting.title}</div>
+            <div style="margin-top: 8px; color: rgba(255,255,255,0.65); font-size: 0.92rem; line-height: 1.5;">
+              ${painting.technique ? `<div>${painting.technique}</div>` : ''}
+              ${painting.location ? `<div>${painting.location}</div>` : ''}
+            </div>
+          </div>
+        `;
+
+        galleryEl.appendChild(card);
+      });
+    }
+
+    loadCSV();
+  </script>
+
+</body>
+</html>
