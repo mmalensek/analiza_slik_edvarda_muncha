@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore")
 # Import analysis modules
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "analize"))
-from analize.color_analysis import extract_important_colors, compute_saliency
+from analize.color_analysis import extract_important_colors, compute_saliency, cluster_similar_colors, rgb_to_lab, lab_distance
 from analize.edge_analysis import compute_texture_metrics
 
 # configuration
@@ -129,17 +129,65 @@ def analyse_painting(path: str):
     print(f"  Analysing: {os.path.basename(path)} …")
     pixels = load_and_resize(path)
     
-    # Dominant colours
+    # Dominant colours (ORIGINAL, ne-clusterirane)
     colours, proportions = extract_dominant_colours(pixels)
     names = [rgb_to_name(c) for c in colours]
     hex_codes = [to_hex(c) for c in colours]
     
-    # Important colours (saliency + contrast + rarity)
+    # Dominant colours - clusterirane verzije za paletu
+    colours_clustered, proportions_clustered = cluster_similar_colors(colours, proportions, lab_threshold=15.0)
+    
+    # Important colours (ORIGINAL, ne-clusterirane)
     try:
         important_colors = extract_important_colors(pixels, n_colors=8, n_superpixels=300)
     except Exception as e:
         print(f"    Warning: Could not extract important colors: {e}")
         important_colors = []
+    
+    # Important colours - clusterirane verzije za paletu
+    if important_colors:
+        try:
+            # Extract RGB and importance scores
+            important_rgb = np.array([c["rgb"] for c in important_colors])
+            important_scores = np.array([c["importance"] for c in important_colors])
+            # Cluster similar colors
+            important_clustered, important_scores_clustered = cluster_similar_colors(
+                important_rgb, important_scores, lab_threshold=15.0
+            )
+        except Exception as e:
+            print(f"    Warning: Could not cluster important colors: {e}")
+            important_clustered = np.array([])
+            important_scores_clustered = np.array([])
+    else:
+        important_clustered = np.array([])
+        important_scores_clustered = np.array([])
+    
+    # Merge CLUSTERIRANE dominant i important u unified palette sa labelima
+    color_palette = []
+    # Add clusterirane dominant colors
+    for rgb, freq in zip(colours_clustered, proportions_clustered):
+        color_palette.append({
+            "rgb": rgb,
+            "frequency": freq,
+            "source": "dominant",
+        })
+    # Add clusterirane important colors (avoid exact duplicates)
+    for rgb, score in zip(important_clustered, important_scores_clustered):
+        # Check if very similar color already exists
+        is_duplicate = False
+        for existing in color_palette:
+            if lab_distance(rgb_to_lab(rgb), rgb_to_lab(existing["rgb"])) < 10:
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            color_palette.append({
+                "rgb": rgb,
+                "frequency": score,  # Use importance score as frequency proxy
+                "source": "important",
+            })
+    
+    # Sort by frequency descending
+    color_palette.sort(key=lambda x: x["frequency"], reverse=True)
     
     # Texture metrics
     try:
@@ -155,13 +203,15 @@ def analyse_painting(path: str):
     return {
         "title": os.path.splitext(os.path.basename(path))[0].replace("_", " ").title(),
         "path": path,
-        # Dominant colours
+        # Dominant colours (ORIGINAL)
         "colours": colours,
         "proportions": proportions,
         "names": names,
         "hex_codes": hex_codes,
-        # Important colours
+        # Important colours (ORIGINAL)
         "important_colors": important_colors,
+        # Unified color palette (CLUSTERIRANE verzije)
+        "color_palette": color_palette,
         # Texture
         "texture": texture,
         "saliency": saliency,
@@ -172,27 +222,36 @@ def analyse_painting(path: str):
 # Visualization
 
 def animate_analyses(analyses):
-    """Build an interactive matplotlib figure navigated with left/right keys."""
+    """Build an interactive matplotlib figure navigated with left/right keys for images, up/down for pages."""
     n_paintings = len(analyses)
     fig = plt.figure(figsize=(16, 10), facecolor=FIGURE_BG)
     fig.suptitle("Edvard Munch: Analiza barv in teksture", color=TEXT_COLOR,
                  fontsize=16, fontweight="bold", y=0.98)
 
-    # axes layout - 2x3 grid with better spacing
-    ax_img       = fig.add_axes([0.02, 0.50, 0.27, 0.40])   # painting preview (top-left)
-    ax_bar       = fig.add_axes([0.34, 0.50, 0.27, 0.40])   # dominant colours (top-middle)
-    ax_important = fig.add_axes([0.66, 0.50, 0.27, 0.40])   # important colours (top-right)
+    # COLOR ANALYSIS PAGE axes (2 rows)
+    ax_img       = fig.add_axes([0.04, 0.52, 0.26, 0.38])   # painting preview (top-left)
+    ax_bar       = fig.add_axes([0.36, 0.52, 0.26, 0.38])   # dominant colours (top-middle)
+    ax_important = fig.add_axes([0.68, 0.52, 0.26, 0.38])   # important colours (top-right)
     
-    ax_saliency  = fig.add_axes([0.02, 0.04, 0.27, 0.40])   # saliency map (bottom-left)
-    ax_edges     = fig.add_axes([0.34, 0.04, 0.27, 0.40])   # edges map (bottom-middle)
-    ax_texture   = fig.add_axes([0.66, 0.04, 0.27, 0.40])   # texture metrics (bottom-right)
+    ax_palette   = fig.add_axes([0.04, 0.11, 0.92, 0.33])   # unified color palette (bottom-full-width)
+    
+    # TEXTURE ANALYSIS PAGE axes (spread out)
+    ax_saliency  = fig.add_axes([0.04, 0.52, 0.42, 0.38])   # saliency map (top-left, larger)
+    ax_edges     = fig.add_axes([0.54, 0.52, 0.42, 0.38])   # edges map (top-right, larger)
+    ax_texture   = fig.add_axes([0.04, 0.09, 0.92, 0.38])   # texture metrics (bottom-full-width)
 
-    for ax in [ax_img, ax_bar, ax_important, ax_saliency, ax_edges, ax_texture]:
+    # Color analysis axes
+    color_axes = [ax_img, ax_bar, ax_important, ax_palette]
+    # Texture analysis axes
+    texture_axes = [ax_saliency, ax_edges, ax_texture]
+    
+    # Setup styling for all axes
+    for ax in [ax_img, ax_bar, ax_important, ax_palette, ax_saliency, ax_edges, ax_texture]:
         ax.set_facecolor(FIGURE_BG)
         for spine in ax.spines.values():
             spine.set_edgecolor("#393836")
 
-    state = {"index": 0}
+    state = {"image_index": 0, "page": 0}  # page 0 = color, page 1 = texture
     status_text = fig.text(
         0.5,
         0.01,
@@ -202,164 +261,212 @@ def animate_analyses(analyses):
         fontsize=12,
     )
 
-    def draw_frame(idx):
-        data = analyses[idx]
+    def draw_frame(img_idx, page):
+        data = analyses[img_idx]
+        
+        # Hide/show axes based on current page
+        if page == 0:  # Color analysis page
+            for ax in color_axes:
+                ax.set_visible(True)
+            for ax in texture_axes:
+                ax.set_visible(False)
+        else:  # Texture analysis page
+            for ax in color_axes:
+                ax.set_visible(False)
+            for ax in texture_axes:
+                ax.set_visible(True)
 
-        # clear axes for redraw
-        for ax in [ax_img, ax_bar, ax_important, ax_saliency, ax_edges, ax_texture]:
+        # clear all axes for redraw
+        for ax in [ax_img, ax_bar, ax_important, ax_palette, ax_saliency, ax_edges, ax_texture]:
             ax.cla()
             ax.set_facecolor(FIGURE_BG)
 
-        # ============ TOP ROW ============
+        # ============ COLOR ANALYSIS PAGE ============
+        if page == 0:
+            # painting image (fade in)
+            try:
+                img_arr = load_and_resize(data["path"], 300)
+                ax_img.imshow(img_arr)
+            except Exception:
+                ax_img.set_facecolor("#2d2c2a")
+            ax_img.axis("off")
+            ax_img.set_title(data["title"], color=TEXT_COLOR, fontsize=11, pad=6)
 
-        # painting image (fade in)
-        try:
-            img_arr = load_and_resize(data["path"], 300)
-            ax_img.imshow(img_arr)
-        except Exception:
-            ax_img.set_facecolor("#2d2c2a")
-        ax_img.axis("off")
-        ax_img.set_title(data["title"], color=TEXT_COLOR, fontsize=11, pad=6)
+            # dominant colours bar chart
+            n = len(data["colours"])
+            y_pos = np.arange(n)
+            widths = data["proportions"] * 100
 
-        # dominant colours bar chart
-        n = len(data["colours"])
-        y_pos = np.arange(n)
-        widths = data["proportions"] * 100
-
-        bars = ax_bar.barh(y_pos, widths, color=data["colours"].tolist(),
-                           edgecolor="#393836", linewidth=0.5)
-        ax_bar.set_yticks(y_pos)
-        ax_bar.set_yticklabels(
-            [f"{data['names'][i]}"
-             for i in range(n)],
-            color=TEXT_COLOR, fontsize=8)
-        ax_bar.set_xlim(0, 55)
-        ax_bar.set_xlabel("Proportion (%)", color=TEXT_COLOR, fontsize=8)
-        ax_bar.tick_params(colors=TEXT_COLOR, labelsize=7)
-        ax_bar.set_title("Dominant Colours", color=TEXT_COLOR, fontsize=10, pad=6)
-        ax_bar.invert_yaxis()
-        for spine in ax_bar.spines.values():
-            spine.set_edgecolor("#393836")
-
-        # add percentage labels
-        for bar, pct in zip(bars, data["proportions"] * 100):
-            if pct > 1.5:
-                ax_bar.text(pct + 0.3, bar.get_y() + bar.get_height()/2,
-                            f"{pct:.1f}%", va="center", color=TEXT_COLOR,
-                            fontsize=7)
-
-        # Important colours (saliency + contrast + rarity based)
-        important_colors = data.get("important_colors", [])
-        if important_colors:
-            n_imp = len(important_colors)
-            y_pos_imp = np.arange(n_imp)
-            
-            # Get RGB colors and importance scores
-            imp_rgb_colors = [c["rgb"] for c in important_colors]
-            imp_scores = np.array([c["importance"] for c in important_colors])
-            
-            bars_imp = ax_important.barh(y_pos_imp, imp_scores, 
-                                         color=imp_rgb_colors,
-                                         edgecolor="#393836", linewidth=0.5)
-            
-            # Labels
-            labels_imp = [f"{i+1}. {important_colors[i]['importance']:.3f}" for i in range(n_imp)]
-            ax_important.set_yticks(y_pos_imp)
-            ax_important.set_yticklabels(labels_imp, color=TEXT_COLOR, fontsize=7)
-            ax_important.set_xlim(0, 1.0)
-            ax_important.set_xlabel("Importance", color=TEXT_COLOR, fontsize=8)
-            ax_important.tick_params(colors=TEXT_COLOR, labelsize=7)
-            ax_important.set_title("Important Colours", color=TEXT_COLOR, fontsize=10, pad=6)
-            ax_important.invert_yaxis()
-            for spine in ax_important.spines.values():
+            bars = ax_bar.barh(y_pos, widths, color=data["colours"].tolist(),
+                               edgecolor="#393836", linewidth=0.5)
+            ax_bar.set_yticks(y_pos)
+            ax_bar.set_yticklabels(
+                [f"{data['names'][i]}"
+                 for i in range(n)],
+                color=TEXT_COLOR, fontsize=8)
+            ax_bar.set_xlim(0, 55)
+            ax_bar.set_xlabel("Proportion (%)", color=TEXT_COLOR, fontsize=8)
+            ax_bar.tick_params(colors=TEXT_COLOR, labelsize=7)
+            ax_bar.set_title("Dominant Colours", color=TEXT_COLOR, fontsize=10, pad=6)
+            ax_bar.invert_yaxis()
+            for spine in ax_bar.spines.values():
                 spine.set_edgecolor("#393836")
 
-        # ============ BOTTOM ROW ============
+            # add percentage labels
+            for bar, pct in zip(bars, data["proportions"] * 100):
+                if pct > 1.5:
+                    ax_bar.text(pct + 0.3, bar.get_y() + bar.get_height()/2,
+                                f"{pct:.1f}%", va="center", color=TEXT_COLOR,
+                                fontsize=7)
 
-        # Saliency map (gradient magnitude heatmap)
-        if data.get("saliency") is not None and data["saliency"].size > 0:
-            saliency_display = plt.cm.hot(data["saliency"])
-            ax_saliency.imshow(saliency_display)
-        ax_saliency.axis("off")
-        ax_saliency.set_title("Saliency (edges/contrast)", color=TEXT_COLOR, fontsize=10, pad=6)
+            # Important colours (saliency + contrast + rarity based)
+            important_colors = data.get("important_colors", [])
+            if important_colors:
+                n_imp = len(important_colors)
+                y_pos_imp = np.arange(n_imp)
+                
+                # Get RGB colors and importance scores
+                imp_rgb_colors = [c["rgb"] for c in important_colors]
+                imp_scores = np.array([c["importance"] for c in important_colors])
+                
+                bars_imp = ax_important.barh(y_pos_imp, imp_scores, 
+                                             color=imp_rgb_colors,
+                                             edgecolor="#393836", linewidth=0.5)
+                
+                # Labels
+                labels_imp = [f"{i+1}. {important_colors[i]['importance']:.3f}" for i in range(n_imp)]
+                ax_important.set_yticks(y_pos_imp)
+                ax_important.set_yticklabels(labels_imp, color=TEXT_COLOR, fontsize=7)
+                ax_important.set_xlim(0, 1.0)
+                ax_important.set_xlabel("Importance", color=TEXT_COLOR, fontsize=8)
+                ax_important.tick_params(colors=TEXT_COLOR, labelsize=7)
+                ax_important.set_title("Important Colours", color=TEXT_COLOR, fontsize=10, pad=6)
+                ax_important.invert_yaxis()
+                for spine in ax_important.spines.values():
+                    spine.set_edgecolor("#393836")
 
-        # Edge magnitude map
-        if data.get("edges") is not None and data["edges"].size > 0:
-            edges_display = plt.cm.gray(data["edges"])
-            ax_edges.imshow(edges_display)
-            # Overlay detected straight lines (Hough)
-            for (x0, y0), (x1, y1) in data.get("hough_lines", []):
-                ax_edges.plot([x0, x1], [y0, y1], color="#e53935", linewidth=1.0, alpha=0.8)
-        ax_edges.axis("off")
-        ax_edges.set_title("Edge Magnitude + Straight Lines", color=TEXT_COLOR, fontsize=10, pad=6)
-
-        # Texture metrics bar chart
-        texture = data.get("texture", {})
-        if texture:
-            metrics = ["Mean G", "Std G", "Edge D", "Lapl V", "Line Sup", "Curve R", "Ori Ent"]
-            values = [
-                texture.get("mean_gradient", 0),
-                texture.get("std_gradient", 0),
-                texture.get("edge_density", 0),
-                texture.get("laplacian_variance", 0),
-                texture.get("line_support_ratio", 0),
-                texture.get("curve_edge_ratio", 0),
-                texture.get("orientation_entropy", 0),
-            ]
-            # Scale to comparable visual ranges for bar chart readability
-            scales = np.array([2.5, 5.0, 1.0, 80.0, 1.0, 1.0, 1.0])
-            values = np.array(values) * scales
+            # ============ UNIFIED COLOR PALETTE ============
             
-            colors_tex = ["#e85d75", "#f39c12", "#3498db", "#2ecc71", "#4f98a3", "#8bc34a", "#9c27b0"]
-            bars_tex = ax_texture.bar(range(len(metrics)), values, color=colors_tex,
-                                      edgecolor="#393836", linewidth=0.5)
-            ax_texture.set_xticks(range(len(metrics)))
-            ax_texture.set_xticklabels(metrics, color=TEXT_COLOR, fontsize=7, rotation=35, ha='right')
-            ax_texture.set_ylabel("Scaled Value", color=TEXT_COLOR, fontsize=8)
-            ax_texture.tick_params(colors=TEXT_COLOR, labelsize=7)
-            ax_texture.set_title("Texture + Line/Curve Metrics", color=TEXT_COLOR, fontsize=10, pad=6)
+            color_palette = data.get("color_palette", [])
+            if color_palette:
+                palette_colors = [c["rgb"] for c in color_palette]
+                palette_freqs = [c["frequency"] for c in color_palette]
+                palette_sources = [c["source"] for c in color_palette]
+                
+                n_palette = len(palette_colors)
+                y_pos_palette = np.arange(n_palette)
+                
+                # Draw horizontal bars
+                bars_palette = ax_palette.barh(y_pos_palette, palette_freqs, color=palette_colors,
+                                              edgecolor="#555", linewidth=0.8)
+                
+                # Labels: color number + source (dominant/important)
+                labels_palette = [f"{i+1}. [{palette_sources[i][:3].upper()}]" 
+                                for i in range(n_palette)]
+                
+                ax_palette.set_yticks(y_pos_palette)
+                ax_palette.set_yticklabels(labels_palette, color=TEXT_COLOR, fontsize=8)
+                ax_palette.set_xlabel("Frequency / Importance", color=TEXT_COLOR, fontsize=9)
+                ax_palette.tick_params(colors=TEXT_COLOR, labelsize=8)
+                ax_palette.set_title("Unified Color Palette", color=TEXT_COLOR, fontsize=11, pad=6, fontweight="bold")
+                ax_palette.invert_yaxis()
+                for spine in ax_palette.spines.values():
+                    spine.set_edgecolor("#393836")
+
+        # ============ TEXTURE ANALYSIS PAGE ============
+        else:
+            # Saliency map (gradient magnitude heatmap)
+            if data.get("saliency") is not None and data["saliency"].size > 0:
+                saliency_display = plt.cm.hot(data["saliency"])
+                ax_saliency.imshow(saliency_display)
+            ax_saliency.axis("off")
+            ax_saliency.set_title("Saliency (edges/contrast)", color=TEXT_COLOR, fontsize=10, pad=6)
+
+            # Edge magnitude map
+            if data.get("edges") is not None and data["edges"].size > 0:
+                edges_display = plt.cm.gray(data["edges"])
+                ax_edges.imshow(edges_display)
+                # Overlay detected straight lines (Hough)
+                for (x0, y0), (x1, y1) in data.get("hough_lines", []):
+                    ax_edges.plot([x0, x1], [y0, y1], color="#e53935", linewidth=1.0, alpha=0.8)
+            ax_edges.axis("off")
+            ax_edges.set_title("Edge Magnitude + Straight Lines", color=TEXT_COLOR, fontsize=10, pad=6)
+
+            # Texture metrics bar chart
+            texture = data.get("texture", {})
+            if texture:
+                metrics = ["Mean G", "Std G", "Edge D", "Lapl V", "Line Sup", "Curve R", "Ori Ent"]
+                values = [
+                    texture.get("mean_gradient", 0),
+                    texture.get("std_gradient", 0),
+                    texture.get("edge_density", 0),
+                    texture.get("laplacian_variance", 0),
+                    texture.get("line_support_ratio", 0),
+                    texture.get("curve_edge_ratio", 0),
+                    texture.get("orientation_entropy", 0),
+                ]
+                # Scale to comparable visual ranges for bar chart readability
+                scales = np.array([2.5, 5.0, 1.0, 80.0, 1.0, 1.0, 1.0])
+                values = np.array(values) * scales
+                
+                colors_tex = ["#e85d75", "#f39c12", "#3498db", "#2ecc71", "#4f98a3", "#8bc34a", "#9c27b0"]
+                bars_tex = ax_texture.bar(range(len(metrics)), values, color=colors_tex,
+                                          edgecolor="#393836", linewidth=0.5)
+                ax_texture.set_xticks(range(len(metrics)))
+                ax_texture.set_xticklabels(metrics, color=TEXT_COLOR, fontsize=7, rotation=35, ha='right')
+                ax_texture.set_ylabel("Scaled Value", color=TEXT_COLOR, fontsize=8)
+                ax_texture.tick_params(colors=TEXT_COLOR, labelsize=7)
+                ax_texture.set_title("Texture + Line/Curve Metrics", color=TEXT_COLOR, fontsize=10, pad=6)
+                
+                # Add value labels
+                for bar, val in zip(bars_tex, values):
+                    height = bar.get_height()
+                    if height > 0.02:
+                        ax_texture.text(bar.get_x() + bar.get_width()/2., height,
+                                       f'{val:.2f}',
+                                       ha='center', va='bottom', color=TEXT_COLOR, fontsize=7)
+
+                # Small textual summary for interpretation
+                straightness = texture.get("line_support_ratio", 0.0)
+                curviness = texture.get("curve_edge_ratio", 0.0)
+                dom_angle = texture.get("dominant_line_orientation_deg", 0.0)
+                ax_texture.text(
+                    0.02,
+                    0.96,
+                    f"Straightness: {straightness:.2f} | Curviness: {curviness:.2f} | Dom angle: {dom_angle:.0f} deg",
+                    transform=ax_texture.transAxes,
+                    color=TEXT_COLOR,
+                    fontsize=7,
+                    va="top",
+                )
             
-            # Add value labels
-            for bar, val in zip(bars_tex, values):
-                height = bar.get_height()
-                if height > 0.02:
-                    ax_texture.text(bar.get_x() + bar.get_width()/2., height,
-                                   f'{val:.2f}',
-                                   ha='center', va='bottom', color=TEXT_COLOR, fontsize=7)
+            for spine in ax_texture.spines.values():
+                spine.set_edgecolor("#393836")
 
-            # Small textual summary for interpretation
-            straightness = texture.get("line_support_ratio", 0.0)
-            curviness = texture.get("curve_edge_ratio", 0.0)
-            dom_angle = texture.get("dominant_line_orientation_deg", 0.0)
-            ax_texture.text(
-                0.02,
-                0.96,
-                f"Straightness: {straightness:.2f} | Curviness: {curviness:.2f} | Dom angle: {dom_angle:.0f} deg",
-                transform=ax_texture.transAxes,
-                color=TEXT_COLOR,
-                fontsize=7,
-                va="top",
-            )
-        
-        for spine in ax_texture.spines.values():
-            spine.set_edgecolor("#393836")
-
-        dots = "  ".join(("O" if i == idx else "I") for i in range(n_paintings))
-        status_text.set_text(f"{dots}\nUse left/right arrow keys to move between images")
+        # Update status text
+        page_name = "Color Analysis" if page == 0 else "Texture Analysis"
+        dots = "  ".join(("O" if i == img_idx else "I") for i in range(n_paintings))
+        status_text.set_text(f"{dots}\n{page_name} — Use ← → to change images, ↑ ↓ to change page")
         fig.canvas.draw_idle()
 
         return []
 
     def on_key(event):
         if event.key == "right":
-            state["index"] = min(state["index"] + 1, n_paintings - 1)
-            draw_frame(state["index"])
+            state["image_index"] = min(state["image_index"] + 1, n_paintings - 1)
+            draw_frame(state["image_index"], state["page"])
         elif event.key == "left":
-            state["index"] = max(state["index"] - 1, 0)
-            draw_frame(state["index"])
+            state["image_index"] = max(state["image_index"] - 1, 0)
+            draw_frame(state["image_index"], state["page"])
+        elif event.key == "down":
+            state["page"] = min(state["page"] + 1, 1)
+            draw_frame(state["image_index"], state["page"])
+        elif event.key == "up":
+            state["page"] = max(state["page"] - 1, 0)
+            draw_frame(state["image_index"], state["page"])
 
     fig.canvas.mpl_connect("key_press_event", on_key)
-    draw_frame(0)
+    draw_frame(0, 0)
     return fig, None
 
 
@@ -403,7 +510,9 @@ def main():
     analyses = [analyse_painting(p) for p in paths]
 
     print("\nLaunching animated visualisation:")
-    print("(Use left/right arrow keys to move between paintings, then close the window to exit)")
+    print("(Use left/right arrow keys to move between paintings)")
+    print("(Use up/down arrow keys to switch between color and texture analysis pages)")
+    print("(Then close the window to exit)")
     fig, ani = animate_analyses(analyses)
     plt.show()
     print("Done.")

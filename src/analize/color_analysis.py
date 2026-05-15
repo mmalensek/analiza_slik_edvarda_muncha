@@ -65,6 +65,63 @@ def lab_distance(lab1, lab2):
     return np.sqrt(np.sum((lab1 - lab2) ** 2))
 
 
+def cluster_similar_colors(colors, frequencies=None, lab_threshold=15.0):
+    """
+    Cluster similar colors in LAB space to deduplicate similar hues.
+    
+    Args:
+        colors: array of RGB colors (0-1), shape (N, 3)
+        frequencies: optional array of frequencies/importances for each color
+        lab_threshold: Lab distance threshold for grouping similar colors
+    
+    Returns:
+        merged_colors: deduplicated RGB colors
+        merged_freqs: summed frequencies for merged colors
+    """
+    if len(colors) == 0:
+        return np.array([]), np.array([])
+    
+    colors = np.array(colors)
+    if frequencies is None:
+        frequencies = np.ones(len(colors))
+    frequencies = np.array(frequencies)
+    
+    # Convert to Lab
+    colors_lab = np.array([rgb_to_lab(c) for c in colors])
+    
+    # Greedy clustering: go through colors, merge similar ones
+    merged = []
+    merged_freqs = []
+    used = set()
+    
+    for i in range(len(colors)):
+        if i in used:
+            continue
+        
+        # Start a new cluster with this color
+        cluster_rgb = [colors[i]]
+        cluster_freq = [frequencies[i]]
+        used.add(i)
+        
+        # Find all similar colors
+        for j in range(i + 1, len(colors)):
+            if j not in used:
+                dist = lab_distance(colors_lab[i], colors_lab[j])
+                if dist < lab_threshold:
+                    cluster_rgb.append(colors[j])
+                    cluster_freq.append(frequencies[j])
+                    used.add(j)
+        
+        # Merge cluster: weighted average color
+        merged_color = np.average(cluster_rgb, axis=0, weights=cluster_freq)
+        merged_freq = sum(cluster_freq)
+        
+        merged.append(merged_color)
+        merged_freqs.append(merged_freq)
+    
+    return np.array(merged), np.array(merged_freqs)
+
+
 # ==================== SALIENCY COMPUTATION ====================
 def compute_saliency(pixels):
     """
@@ -264,6 +321,7 @@ __all__ = [
     "saturation",
     "rgb_to_lab",
     "lab_distance",
+    "cluster_similar_colors",
     "compute_saliency",
     "extract_important_colors",
     "extract_superpixels_with_saliency",
