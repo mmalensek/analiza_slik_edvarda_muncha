@@ -261,9 +261,22 @@ def animate_analyses(analyses):
         color=ACCENT,
         fontsize=12,
     )
+    main_title = None  # Will hold reference to main title for page-specific visibility
 
     def draw_frame(img_idx, page):
+        nonlocal main_title
         data = analyses[img_idx]
+        
+        # Handle main title - only show on color analysis page
+        if page == 0:  # Color analysis page
+            if main_title is None:
+                main_title = fig.suptitle("Edvard Munch: Analiza barv in teksture", color=TEXT_COLOR,
+                                         fontsize=16, fontweight="bold", y=0.98)
+            else:
+                main_title.set_visible(True)
+        else:  # Texture analysis page
+            if main_title is not None:
+                main_title.set_visible(False)
         
         # Hide/show axes based on current page
         if page == 0:  # Color analysis page
@@ -276,6 +289,11 @@ def animate_analyses(analyses):
                 ax.set_visible(False)
             for ax in texture_axes:
                 ax.set_visible(True)
+
+        # Clear figure-level text (except status_text and main_title)
+        for text_obj in fig.texts[:]:
+            if text_obj != status_text and text_obj != main_title:
+                text_obj.remove()
 
         # clear all axes for redraw
         for ax in [ax_img, ax_bar, ax_important, ax_palette, ax_palette_grid, ax_saliency, ax_edges, ax_texture]:
