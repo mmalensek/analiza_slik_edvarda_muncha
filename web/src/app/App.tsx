@@ -51,6 +51,14 @@ export default function App() {
 
   const [isLoading, setIsLoading] = useState(true);
 
+  const [analysisView, setAnalysisView] =
+  useState<
+    'original' |
+    'edges' |
+    'saliency' |
+    'texture'
+  >('original');
+
   const timelineRef =
     useRef<HTMLDivElement | null>(null);
 
@@ -317,10 +325,41 @@ export default function App() {
                 {/* FIXED IMAGE CONTAINER */}
                 <div className="h-[72vh] w-full rounded-3xl border border-white/10 bg-black/30 overflow-hidden backdrop-blur-sm flex items-center justify-center p-8">
                   <img
-                    src={`/munch_paintings/${selectedPainting.image}`}
+                    src={
+                      analysisView === 'original'
+                        ? `/munch_paintings/${selectedPainting.image}`
+                        : `/generirani_grafi/${
+                            selectedPainting.image.split('.')[0]
+                          }/${analysisView}.png`
+                    }
                     alt={selectedPainting.title}
-                    className="max-h-full max-w-full object-contain shadow-2xl"
+                    className="max-h-full max-w-full object-contain shadow-2xl transition-all duration-500"
                   />
+                </div>
+
+                <div className="absolute top-6 left-6 flex gap-2 z-20">
+                  {[
+                    'original',
+                    'edges',
+                    'saliency',
+                    'texture'
+                  ].map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() =>
+                        setAnalysisView(
+                          mode as typeof analysisView
+                        )
+                      }
+                      className={`px-4 py-2 rounded-full text-sm backdrop-blur-md border transition-all ${
+                        analysisView === mode
+                          ? 'bg-amber-400 text-black border-amber-400'
+                          : 'bg-black/40 text-white border-white/10 hover:bg-white/10'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
                 </div>
 
                 {/* ARROWS */}

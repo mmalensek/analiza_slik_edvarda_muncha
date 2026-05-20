@@ -33,6 +33,7 @@ FIGURE_BG = "#1c1b19" # dark warm surface
 TEXT_COLOR = "#cdccca"
 ACCENT = "#4f98a3"
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".jfif", ".webp", ".bmp", ".tiff")
+OUTPUT_DIR = "../web/public/generirani_grafi/"
 
 
 def collect_paths_from_range(start: int, end: int, folder: str) -> list[str]:
@@ -220,6 +221,131 @@ def analyse_painting(path: str):
     }
 
 # Visualization
+
+def save_analysis_images(analysis):
+    """
+    Save analysis visualizations as PNG files for the website.
+    """
+
+    title = os.path.splitext(
+        os.path.basename(analysis["path"])
+    )[0]
+
+    out_dir = os.path.join(OUTPUT_DIR, title)
+    os.makedirs(out_dir, exist_ok=True)
+
+    # =========================
+    # ORIGINAL IMAGE
+    # =========================
+
+    img = load_and_resize(analysis["path"], 800)
+
+    plt.figure(figsize=(8, 8), facecolor=FIGURE_BG)
+    plt.imshow(img)
+    plt.axis("off")
+
+    plt.savefig(
+        os.path.join(out_dir, "original.png"),
+        dpi=200,
+        bbox_inches="tight",
+        facecolor=FIGURE_BG
+    )
+
+    plt.close()
+
+    # =========================
+    # EDGE MAP
+    # =========================
+
+    plt.figure(figsize=(8, 8), facecolor=FIGURE_BG)
+
+    plt.imshow(
+        analysis["edges"],
+        cmap="gray"
+    )
+
+    plt.axis("off")
+
+    plt.savefig(
+        os.path.join(out_dir, "edges.png"),
+        dpi=200,
+        bbox_inches="tight",
+        facecolor=FIGURE_BG
+    )
+
+    plt.close()
+
+    # =========================
+    # SALIENCY
+    # =========================
+
+    plt.figure(figsize=(8, 8), facecolor=FIGURE_BG)
+
+    plt.imshow(
+        analysis["saliency"],
+        cmap="hot"
+    )
+
+    plt.axis("off")
+
+    plt.savefig(
+        os.path.join(out_dir, "saliency.png"),
+        dpi=200,
+        bbox_inches="tight",
+        facecolor=FIGURE_BG
+    )
+
+    plt.close()
+
+    # =========================
+    # TEXTURE BAR CHART
+    # =========================
+
+    texture = analysis.get("texture", {})
+
+    metrics = [
+        "Mean G",
+        "Std G",
+        "Edge D",
+        "Lapl V",
+        "Line Sup",
+        "Curve R",
+        "Ori Ent"
+    ]
+
+    values = [
+        texture.get("mean_gradient", 0),
+        texture.get("std_gradient", 0),
+        texture.get("edge_density", 0),
+        texture.get("laplacian_variance", 0),
+        texture.get("line_support_ratio", 0),
+        texture.get("curve_edge_ratio", 0),
+        texture.get("orientation_entropy", 0),
+    ]
+
+    plt.figure(figsize=(10, 5), facecolor=FIGURE_BG)
+
+    plt.bar(range(len(metrics)), values)
+
+    plt.xticks(
+        range(len(metrics)),
+        metrics,
+        rotation=25,
+        color=TEXT_COLOR
+    )
+
+    plt.yticks(color=TEXT_COLOR)
+
+    plt.gca().set_facecolor(FIGURE_BG)
+
+    plt.savefig(
+        os.path.join(out_dir, "texture.png"),
+        dpi=200,
+        bbox_inches="tight",
+        facecolor=FIGURE_BG
+    )
+
+    plt.close()
 
 def animate_analyses(analyses):
     """Build an interactive matplotlib figure navigated with left/right keys for images, up/down for pages."""
@@ -575,6 +701,13 @@ def main():
         return
 
     analyses = [analyse_painting(p) for p in paths]
+
+    print("\nSaving analysis images...")
+
+    for analysis in analyses:
+        save_analysis_images(analysis)
+
+    print("Saved analysis images.")
 
     print("\nLaunching animated visualisation:")
     print("(Use left/right arrow keys to move between paintings)")
