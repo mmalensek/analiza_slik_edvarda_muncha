@@ -111,25 +111,70 @@ def _filter_lines(lines, gray, grad, sx, sy, min_score=0.48):
 
 
 def detect_line_segments(pixels):
-    """Detect straight line segments with probabilistic Hough transform."""
+    """Detect straight line segments with probabilistic Hough transform
+    using multiple line-length scales.
+    """
     gray = _to_gray(pixels)
     h, w = gray.shape
 
     # Mild smoothing reduces brush-stroke noise before Canny/Hough.
     blur = ndi.gaussian_filter(gray, sigma=1.0)
+
     sx = ndi.sobel(blur, axis=0, mode="reflect")
     sy = ndi.sobel(blur, axis=1, mode="reflect")
     grad = np.hypot(sx, sy)
 
     canny_edges = canny(blur, sigma=1.2)
-    min_len = max(min(h, w) // 8, 15)
-    candidates = probabilistic_hough_line(
-        canny_edges,
-        threshold=10,
-        line_length=min_len,
-        line_gap=3,
-    )
-    return _filter_lines(candidates, blur, grad, sx, sy)
+
+    # Different line-length scales
+    base = min(h, w)
+
+    line_lengths = [
+        max(base // 40, 5),    # tiny details
+        max(base // 25, 8),    # very short
+        max(base // 18, 12),   # short
+        max(base // 12, 18),   # medium-short
+        max(base // 8, 25),    # medium
+        max(base // 6, 35),    # medium-long
+        max(base // 4, 50),    # long
+        max(base // 3, 70),    # very long
+    ]
+
+    all_candidates = []
+
+    for line_len in line_lengths:
+        candidates = probabilistic_hough_line(
+            canny_edges,
+            threshold=10,
+            line_length=line_len,
+            line_gap=max(2, line_len // 10),
+        )
+
+        all_candidates.extend(candidates)
+
+    # Remove duplicates / near duplicates
+    unique = []
+    seen = set()
+
+    for line in all_candidates:
+        (x0, y0), (x1, y1) = line
+
+        # normalize orientation so reversed lines count the same
+        if (x0, y0) > (x1, y1):
+            x0, y0, x1, y1 = x1, y1, x0, y0
+
+        key = (
+            round(x0 / 5),
+            round(y0 / 5),
+            round(x1 / 5),
+            round(y1 / 5),
+        )
+
+        if key not in seen:
+            seen.add(key)
+            unique.append(((x0, y0), (x1, y1)))
+
+    return _filter_lines(unique, blur, grad, sx, sy)
 
 
 def compute_texture_metrics(pixels):
