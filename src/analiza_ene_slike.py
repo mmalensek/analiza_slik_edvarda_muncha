@@ -254,17 +254,33 @@ def save_analysis_images(analysis):
     plt.close()
 
     # =========================
-    # EDGE MAP
+    # EDGE MAP + HOUGH LINES
     # =========================
 
-    plt.figure(figsize=(8, 8), facecolor=FIGURE_BG)
+    fig, ax = plt.subplots(
+        figsize=(8, 8),
+        facecolor=FIGURE_BG
+    )
 
-    plt.imshow(
+    ax.imshow(
         analysis["edges"],
         cmap="gray"
     )
 
-    plt.axis("off")
+    # draw detected lines
+    for (x0, y0), (x1, y1) in analysis.get(
+        "hough_lines",
+        []
+    ):
+        ax.plot(
+            [x0, x1],
+            [y0, y1],
+            color="#ff4d4d",
+            linewidth=1.5,
+            alpha=0.9
+        )
+
+    ax.axis("off")
 
     plt.savefig(
         os.path.join(out_dir, "edges.png"),
@@ -296,6 +312,56 @@ def save_analysis_images(analysis):
     )
 
     plt.close()
+
+    # =========================
+    # UNIFIED COLOR PALETTE
+    # =========================
+
+    palette = analysis.get("color_palette", [])
+
+    if palette:
+        fig, ax = plt.subplots(
+            figsize=(10, 3),
+            facecolor=FIGURE_BG
+        )
+
+        ax.set_facecolor(FIGURE_BG)
+
+        total = sum(
+            c["frequency"] for c in palette
+        )
+
+        current_x = 0
+
+        for color in palette:
+            width = color["frequency"] / total
+
+            rect = plt.Rectangle(
+                (current_x, 0),
+                width,
+                1,
+                facecolor=color["rgb"],
+                edgecolor=FIGURE_BG,
+                linewidth=2
+            )
+
+            ax.add_patch(rect)
+
+            current_x += width
+
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+
+        ax.axis("off")
+
+        plt.savefig(
+            os.path.join(out_dir, "palette.png"),
+            dpi=200,
+            bbox_inches="tight",
+            facecolor=FIGURE_BG
+        )
+
+        plt.close()
 
     # =========================
     # TEXTURE BAR CHART

@@ -51,12 +51,17 @@ export default function App() {
 
   const [isLoading, setIsLoading] = useState(true);
 
+  const [pageView, setPageView] =
+    useState<'timeline' | 'analytics'>(
+      'timeline'
+  );
+
   const [analysisView, setAnalysisView] =
   useState<
     'original' |
     'edges' |
     'saliency' |
-    'texture'
+    'palette'
   >('original');
 
   const timelineRef =
@@ -292,8 +297,60 @@ export default function App() {
       </header>
 
       {/* ========================= */}
+      {/* PAGE SWITCHER */}
+      {/* ========================= */}
+
+      <div className="max-w-7xl mx-auto px-8 pt-8 flex gap-4">
+        {['timeline', 'analytics'].map((view) => (
+          <button
+            key={view}
+            onClick={() =>
+              setPageView(
+                view as typeof pageView
+              )
+            }
+            className={`px-5 py-3 rounded-full border transition-all capitalize ${
+              pageView === view
+                ? 'bg-amber-400 text-black border-amber-400'
+                : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
+            }`}
+          >
+            {view}
+          </button>
+        ))}
+      </div>
+
+      <section className="border-b border-white/10">
+        <div className="max-w-5xl mx-auto px-8 py-24">
+          <div className="max-w-3xl">
+            <div className="text-sm uppercase tracking-[0.4em] text-amber-400 mb-6">
+              Visual Analysis Project
+            </div>
+
+            <h2 className="text-6xl leading-tight font-light">
+              Exploring Edvard Munch through
+              colour, texture and form.
+            </h2>
+
+            <p className="mt-8 text-lg text-white/60 leading-relaxed">
+              This interactive archive combines
+              computer vision and art history
+              to analyse Edvard Munch's paintings
+              through dominant colours,
+              saliency maps, texture metrics,
+              edge structures and temporal trends
+              across his artistic career.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ========================= */}
       {/* MAIN SECTION */}
       {/* ========================= */}
+
+      {pageView === 'timeline' && (
+        <>
 
       <main className="max-w-7xl mx-auto px-8 py-12">
         <AnimatePresence mode="wait">
@@ -339,27 +396,28 @@ export default function App() {
 
                 <div className="absolute top-6 left-6 flex gap-2 z-20">
                   {[
-                    'original',
-                    'edges',
-                    'saliency',
-                    'texture'
-                  ].map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() =>
-                        setAnalysisView(
-                          mode as typeof analysisView
-                        )
-                      }
-                      className={`px-4 py-2 rounded-full text-sm backdrop-blur-md border transition-all ${
-                        analysisView === mode
-                          ? 'bg-amber-400 text-black border-amber-400'
-                          : 'bg-black/40 text-white border-white/10 hover:bg-white/10'
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
+                  'original',
+                  'edges',
+                  'saliency',
+                  'palette'
+                ].map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() =>
+                      setAnalysisView(
+                        mode as typeof analysisView
+                      )
+                    }
+                    className={`px-4 py-2 rounded-full text-sm backdrop-blur-md border transition-all ${
+                      analysisView === mode
+                        ? 'bg-amber-400 text-black border-amber-400'
+                        : 'bg-black/40 text-white border-white/10 hover:bg-white/10'
+                    }`}
+                  >
+                    {mode}
+                  </button>
+                ))}
+
                 </div>
 
                 {/* ARROWS */}
@@ -668,6 +726,44 @@ export default function App() {
           </AnimatePresence>
         </div>
       </section>
+        </>
+     )}
+     {pageView === 'analytics' && (
+      <section className="max-w-7xl mx-auto px-8 py-20">
+        <div className="mb-16">
+          <h2 className="text-5xl font-light">
+            Collection Analytics
+          </h2>
+
+          <p className="mt-4 text-white/50 max-w-2xl">
+            Statistical and visual analysis
+            across Edvard Munch's complete
+            body of work.
+          </p>
+        </div>
+
+        <div className="grid lg:grid-cols-2 gap-10">
+
+          {[
+            'colors_over_time.png',
+            'texture_over_time.png',
+            'palette_evolution.png',
+            'edge_density.png'
+          ].map((graph) => (
+            <div
+              key={graph}
+              className="rounded-3xl overflow-hidden border border-white/10 bg-black/20 p-6"
+            >
+              <img
+                src={`/analytics/${graph}`}
+                className="w-full rounded-2xl"
+              />
+            </div>
+          ))}
+
+        </div>
+      </section>
+    )}
     </div>
   );
 }
