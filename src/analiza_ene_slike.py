@@ -125,6 +125,89 @@ def compute_edge_map(pixels):
         edges = edges / edges.max()
     return edges
 
+def compute_symmetry(gray):
+    """
+    Compute left-right and top-bottom symmetry.
+    Returns values in range ~[0,1], where higher = more symmetric.
+    """
+
+    # left-right
+    lr_flip = np.fliplr(gray)
+    lr_diff = np.mean(np.abs(gray - lr_flip))
+    lr_sym = 1.0 - lr_diff
+
+    # top-bottom
+    tb_flip = np.flipud(gray)
+    tb_diff = np.mean(np.abs(gray - tb_flip))
+    tb_sym = 1.0 - tb_diff
+
+    return {
+        "left_right_symmetry": float(lr_sym),
+        "top_bottom_symmetry": float(tb_sym),
+    }
+
+
+def compute_saliency_balance(saliency):
+    """
+    Compute center-of-mass of saliency map and
+    distance from image center.
+    """
+
+    h, w = saliency.shape
+
+    # normalize
+    sal = saliency.astype(float)
+    if sal.sum() > 0:
+        sal /= sal.sum()
+
+    cy, cx = ndi.center_of_mass(sal)
+
+    # image center
+    center_y = h / 2
+    center_x = w / 2
+
+    dist = np.sqrt((cx - center_x) ** 2 + (cy - center_y) ** 2)
+
+    # normalize distance
+    max_dist = np.sqrt(center_x**2 + center_y**2)
+    norm_dist = dist / max_dist
+
+    return {
+        "saliency_center_x": float(cx / w),
+        "saliency_center_y": float(cy / h),
+        "saliency_balance": float(1.0 - norm_dist),
+    }
+
+
+def compute_color_contrast(colours, proportions):
+    """
+    Compute average LAB distance between dominant colours.
+    Higher = more contrast/drama.
+    """
+
+    if len(colours) < 2:
+        return 0.0
+
+    labs = [rgb_to_lab(c) for c in colours]
+
+    distances = []
+    weights = []
+
+    for i in range(len(labs)):
+        for j in range(i + 1, len(labs)):
+            d = lab_distance(labs[i], labs[j])
+
+            # weight by frequency
+            w = proportions[i] * proportions[j]
+
+            distances.append(d)
+            weights.append(w)
+
+    if len(distances) == 0:
+        return 0.0
+
+    return float(np.average(distances, weights=weights))
+
 def analyse_painting(path: str):
     """Load image → extract colours, important colours, texture → return dict of results."""
     print(f"  Analysing: {os.path.basename(path)} …")
@@ -190,16 +273,127 @@ def analyse_painting(path: str):
     # Sort by frequency descending
     color_palette.sort(key=lambda x: x["frequency"], reverse=True)
     
-    # Texture metrics
+    # Texture metrics + composition analysis
     try:
         texture = compute_texture_metrics(pixels)
+
         saliency = compute_saliency(pixels)
+
         edges = compute_edge_map(pixels)
+
+        gray = np.dot(
+            pixels[..., :3],
+            [0.299, 0.587, 0.114]
+        ) / 255.0
+
+        # New analyses
+        symmetry = compute_symmetry(gray)
+
+        composition = compute_saliency_balance(saliency)
+
+        color_contrast = compute_color_contrast(
+            colours,
+            proportions
+        )
+
+        # =========================
+        # COMPOSITION BALANCE
+        # =========================
+
+        h, w = gray.shape
+
+        left_mass = np.sum(edges[:, :w // 2])
+        right_mass = np.sum(edges[:, w // 2:])
+
+        composition_balance = 1.0 - (
+            abs(left_mass - right_mass)
+            / (left_mass + right_mass + 1e-8)
+        )
+
+        # =========================
+        # NEGATIVE SPACE RATIO
+        # =========================
+
+        edge_threshold = 0.12
+
+        negative_space_ratio = np.mean(
+            edges < edge_threshold
+        )
+
+        # =========================
+        # CENTER BIAS
+        # =========================
+
+        yy, xx = np.mgrid[0:h, 0:w]
+
+        cx = w / 2
+        cy = h / 2
+
+        dist = np.sqrt(
+            (xx - cx) ** 2 +
+            (yy - cy) ** 2
+        )
+
+        dist /= dist.max()
+
+        center_weight = 1.0 - dist
+
+        center_bias = np.sum(
+            edges * center_weight
+        ) / (np.sum(edges) + 1e-8)
+
+        # =========================
+        # DIRECTION STRENGTH
+        # =========================
+
+        gx = ndi.sobel(gray, axis=1)
+        gy = ndi.sobel(gray, axis=0)
+
+        angles = np.arctan2(gy, gx)
+
+        hist, _ = np.histogram(
+            angles,
+            bins=36,
+            range=(-np.pi, np.pi)
+        )
+
+        direction_strength = hist.max() / (
+            hist.sum() + 1e-8
+        )
+
+        # store new metrics into texture dict
+
+        texture["composition_balance"] = float(
+            composition_balance
+        )
+
+        texture["negative_space_ratio"] = float(
+            negative_space_ratio
+        )
+
+        texture["center_bias"] = float(
+            center_bias
+        )
+
+        texture["direction_strength"] = float(
+            direction_strength
+        )
+
     except Exception as e:
+
         print(f"    Warning: Could not compute texture: {e}")
+
         texture = {}
+
         saliency = np.zeros_like(pixels[:, :, 0])
+
         edges = np.zeros_like(pixels[:, :, 0])
+
+        symmetry = {}
+
+        composition = {}
+
+        color_contrast = 0.0
     
     return {
         "title": os.path.splitext(os.path.basename(path))[0].replace("_", " ").title(),
@@ -217,6 +411,12 @@ def analyse_painting(path: str):
         "texture": texture,
         "saliency": saliency,
         "edges": edges,
+
+        # New analyses
+        "symmetry": symmetry,
+        "composition": composition,
+        "color_contrast": color_contrast,
+
         "hough_lines": texture.get("hough_lines", []) if texture else [],
     }
 
@@ -314,6 +514,104 @@ def save_analysis_images(analysis):
     plt.close()
 
     # =========================
+    # COMPOSITION + SYMMETRY
+    # =========================
+
+    fig, ax = plt.subplots(
+        figsize=(8, 8),
+        facecolor=FIGURE_BG
+    )
+
+    ax.imshow(img)
+
+    h, w = img.shape[:2]
+
+    # Symmetry axes
+    ax.axvline(
+        w / 2,
+        color="#4f98a3",
+        linewidth=2,
+        linestyle="--",
+        alpha=0.8
+    )
+
+    ax.axhline(
+        h / 2,
+        color="#4f98a3",
+        linewidth=2,
+        linestyle="--",
+        alpha=0.8
+    )
+
+    # Saliency center
+    composition = analysis.get("composition", {})
+
+    cx = composition.get(
+        "saliency_center_x",
+        0.5
+    ) * w
+
+    cy = composition.get(
+        "saliency_center_y",
+        0.5
+    ) * h
+
+    ax.scatter(
+        [cx],
+        [cy],
+        s=220,
+        color="#ff4d4d",
+        edgecolors="white",
+        linewidths=2,
+        zorder=10
+    )
+
+    symmetry = analysis.get("symmetry", {})
+
+    lr = symmetry.get(
+        "left_right_symmetry",
+        0
+    )
+
+    tb = symmetry.get(
+        "top_bottom_symmetry",
+        0
+    )
+
+    contrast = analysis.get(
+        "color_contrast",
+        0
+    )
+
+    balance = composition.get(
+        "saliency_balance",
+        0
+    )
+
+    ax.set_title(
+        (
+            f"LR Sym: {lr:.2f} | "
+            f"TB Sym: {tb:.2f} | "
+            f"Contrast: {contrast:.1f} | "
+            f"Balance: {balance:.2f}"
+        ),
+        color="white",
+        fontsize=11,
+        pad=10
+    )
+
+    ax.axis("off")
+
+    plt.savefig(
+        os.path.join(out_dir, "composition.png"),
+        dpi=200,
+        bbox_inches="tight",
+        facecolor=FIGURE_BG
+    )
+
+    plt.close()
+
+    # =========================
     # UNIFIED COLOR PALETTE
     # =========================
 
@@ -376,7 +674,11 @@ def save_analysis_images(analysis):
         "Lapl V",
         "Line Sup",
         "Curve R",
-        "Ori Ent"
+        "Ori Ent",
+        "LR Sym",
+        "TB Sym",
+        "Contrast",
+        "Balance"
     ]
 
     values = [
@@ -387,6 +689,35 @@ def save_analysis_images(analysis):
         texture.get("line_support_ratio", 0),
         texture.get("curve_edge_ratio", 0),
         texture.get("orientation_entropy", 0),
+
+        analysis.get(
+            "symmetry",
+            {}
+        ).get(
+            "left_right_symmetry",
+            0
+        ),
+
+        analysis.get(
+            "symmetry",
+            {}
+        ).get(
+            "top_bottom_symmetry",
+            0
+        ),
+
+        analysis.get(
+            "color_contrast",
+            0
+        ) / 100.0,
+
+        analysis.get(
+            "composition",
+            {}
+        ).get(
+            "saliency_balance",
+            0
+        ),
     ]
 
     plt.figure(figsize=(10, 5), facecolor=FIGURE_BG)
@@ -654,7 +985,19 @@ def animate_analyses(analyses):
             # Texture metrics bar chart
             texture = data.get("texture", {})
             if texture:
-                metrics = ["Mean G", "Std G", "Edge D", "Lapl V", "Line Sup", "Curve R", "Ori Ent"]
+                metrics = [
+    "Mean G",
+    "Std G",
+    "Edge D",
+    "Lapl V",
+    "Line Sup",
+    "Curve R",
+    "Ori Ent",
+    "Comp Bal",
+    "Neg Space",
+    "Center Bias",
+    "Direction"
+]
                 values = [
                     texture.get("mean_gradient", 0),
                     texture.get("std_gradient", 0),
@@ -663,10 +1006,24 @@ def animate_analyses(analyses):
                     texture.get("line_support_ratio", 0),
                     texture.get("curve_edge_ratio", 0),
                     texture.get("orientation_entropy", 0),
+                    texture.get("composition_balance", 0),
+                    texture.get("negative_space_ratio", 0),
+                    texture.get("center_bias", 0),
+                    texture.get("direction_strength", 0),
                 ]
-                # Scale to comparable visual ranges for bar chart readability
-                scales = np.array([2.5, 5.0, 1.0, 80.0, 1.0, 1.0, 1.0])
-                values = np.array(values) * scales
+                scales = np.array([
+    2.5,
+    5.0,
+    1.0,
+    80.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+])
                 
                 colors_tex = ["#e85d75", "#f39c12", "#3498db", "#2ecc71", "#4f98a3", "#8bc34a", "#9c27b0"]
                 bars_tex = ax_texture.bar(range(len(metrics)), values, color=colors_tex,

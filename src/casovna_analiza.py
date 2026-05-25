@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Časovna analiza barvnih trendov v slikah Edvarda Muncha. 
+Časovna analiza barvnih trendov v slikah Edvarda Muncha.
 
-Iz vsake slike izvlečemo dominantne barve in jih združimo po letih nastanka, 
+Iz vsake slike izvlečemo dominantne barve in jih združimo po letih nastanka,
 da vidimo, kako se je spreminjala svetloba, toplina, nasičenost in kompleksnost barv skozi čas.
 
 Usage:
@@ -15,7 +15,6 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
 from collections import defaultdict
 from scipy.stats import entropy
 import warnings
@@ -39,9 +38,9 @@ def collect_paths_from_range(start, end, folder):
             indexed[num] = os.path.join(folder, name)
     return [indexed[k] for k in sorted(indexed)]
 
+
 def load_metadata(csv_path):
     df = pd.read_csv(csv_path)
-    # Normalise headers because datasets often use "number" instead of "id".
     df.columns = [str(col).strip().lower() for col in df.columns]
 
     if "id" not in df.columns:
@@ -59,7 +58,6 @@ def load_metadata(csv_path):
     df = df.dropna(subset=["id"]).copy()
     df["id"] = df["id"].astype(int)
 
-    # Keep the first 4-digit year (e.g., 1881 from "1881-82" or "1881–82").
     df["year"] = (
         df["year"]
         .astype(str)
@@ -71,14 +69,75 @@ def load_metadata(csv_path):
 
     return df.set_index("id")
 
+
 def load_image(path, max_px=300):
     img = Image.open(path).convert("RGB")
     img.thumbnail((max_px, max_px), Image.LANCZOS)
     return np.array(img)
 
+
 # ---------------- EXTERNAL ANALYSIS MODULES ----------------
 from analize.color_analysis import extract_colours, brightness, warmth, saturation
 from analize.edge_analysis import compute_texture_metrics
+
+
+# ---------------- FALLBACK METRICS ----------------
+def compute_fallback_symmetry_composition(pixels):
+    gray = np.array(Image.fromarray(pixels).convert("L"), dtype=np.float32) / 255.0
+    h, w = gray.shape
+
+    if w < 4 or h < 4:
+        return {"symmetry_score": np.nan, "composition_score": np.nan}
+
+    half = w // 2
+    left = gray[:, :half]
+    right = gray[:, w - half:]
+    right_flipped = np.fliplr(right)
+
+    min_w = min(left.shape[1], right_flipped.shape[1])
+    left = left[:, :min_w]
+    right_flipped = right_flipped[:, :min_w]
+
+    sym_diff = np.mean(np.abs(left - right_flipped))
+    symmetry_score = float(np.clip(1.0 - sym_diff, 0.0, 1.0))
+
+    gy, gx = np.gradient(gray)
+    energy = np.sqrt(gx ** 2 + gy ** 2)
+    total_energy = energy.sum()
+
+    if total_energy <= 1e-8:
+        return {
+            "symmetry_score": symmetry_score,
+            "composition_score": np.nan,
+        }
+
+    ys, xs = np.indices(gray.shape)
+    cx = float((xs * energy).sum() / total_energy)
+    cy = float((ys * energy).sum() / total_energy)
+
+    thirds_points = [
+        (w / 3.0, h / 3.0),
+        (2 * w / 3.0, h / 3.0),
+        (w / 3.0, 2 * h / 3.0),
+        (2 * w / 3.0, 2 * h / 3.0),
+    ]
+
+    distances = [np.hypot(cx - tx, cy - ty) for tx, ty in thirds_points]
+    best_dist = min(distances)
+    max_dist = np.hypot(w, h)
+    thirds_alignment = 1.0 - (best_dist / max_dist)
+
+    left_energy = energy[:, :half].sum()
+    right_energy = energy[:, w - half:].sum()
+    balance = 1.0 - abs(left_energy - right_energy) / max(total_energy, 1e-8)
+
+    composition_score = float(np.clip(0.65 * thirds_alignment + 0.35 * balance, 0.0, 1.0))
+
+    return {
+        "symmetry_score": symmetry_score,
+        "composition_score": composition_score,
+    }
+
 
 # ---------------- ANALYSIS ----------------
 def analyse_painting(path, metadata, mode="both"):
@@ -111,8 +170,19 @@ def analyse_painting(path, metadata, mode="both"):
     if mode in ("edge", "both"):
         try:
             texture = compute_texture_metrics(pixels)
+            if texture is None:
+                texture = {}
+
+            if texture.get("symmetry_score") is None and texture.get("symmetry") is not None:
+                texture["symmetry_score"] = texture.get("symmetry")
+
+            if texture.get("composition_score") is None and texture.get("composition_balance") is not None:
+                texture["composition_score"] = texture.get("composition_balance")
+
+            if texture.get("symmetry_score") is None or texture.get("composition_score") is None:
+                texture.update(compute_fallback_symmetry_composition(pixels))
         except Exception:
-            texture = None
+            texture = compute_fallback_symmetry_composition(pixels)
 
     return {
         "year": year,
@@ -120,6 +190,7 @@ def analyse_painting(path, metadata, mode="both"):
         "weights": weights,
         "texture": texture,
     }
+
 
 def aggregate_by_year(analyses):
     yearly = defaultdict(list)
@@ -136,7 +207,6 @@ def aggregate_by_year(analyses):
         textures = []
 
         for it in items:
-            # colors may be None when running in `edge` mode
             if it.get("colours") is not None and it.get("weights") is not None:
                 for c, w in zip(it["colours"], it["weights"]):
                     cols.append(c)
@@ -152,28 +222,27 @@ def aggregate_by_year(analyses):
 
     return result
 
-# ---------------- TREND COMPUTATION ----------------
-def compute_trends(yearly_data, mode="both"):
-    """Compute trends. Returns (years, color_trends, texture_trends).
 
-    color_trends is a dict with keys: brightness, warmth, saturation, entropy (or None if not computed).
-    texture_trends is a dict with texture metrics (or None if not computed).
-    """
+# ---------------- TREND COMPUTATION ----------------
+def safe_mean(values):
+    arr = np.array(values, dtype=float)
+    if arr.size == 0 or np.all(np.isnan(arr)):
+        return np.nan
+    return float(np.nanmean(arr))
+
+
+def compute_trends(yearly_data, mode="both"):
     years = sorted(yearly_data.keys())
 
     color_trends = None
     texture_trends = None
 
     if mode in ("color", "both"):
-        brightness_trend = []
-        warmth_trend = []
-        saturation_trend = []
-        entropy_trend = []
         color_trends = {
-            "brightness": brightness_trend,
-            "warmth": warmth_trend,
-            "saturation": saturation_trend,
-            "entropy": entropy_trend,
+            "brightness": [],
+            "warmth": [],
+            "saturation": [],
+            "entropy": [],
         }
 
     if mode in ("edge", "both"):
@@ -189,12 +258,13 @@ def compute_trends(yearly_data, mode="both"):
             "orientation_entropy": [],
             "dominant_orientation_strength": [],
             "curvature_index": [],
+            "symmetry_score": [],
+            "composition_score": [],
         }
 
     for y in years:
         entry = yearly_data[y]
 
-        # Color trends
         if color_trends is not None:
             cols = entry.get("cols", np.array([]))
             weights = entry.get("weights", np.array([]))
@@ -215,23 +285,25 @@ def compute_trends(yearly_data, mode="both"):
                 color_trends["saturation"].append(s)
                 color_trends["entropy"].append(e)
 
-        # Texture trends
         if texture_trends is not None:
             textures = entry.get("textures", [])
+
             if textures:
-                mg = np.mean([t["mean_gradient"] for t in textures])
-                sg = np.mean([t["std_gradient"] for t in textures])
-                ed = np.mean([t["edge_density"] for t in textures])
-                lv = np.mean([t["laplacian_variance"] for t in textures])
-                nl = np.mean([t.get("num_lines", np.nan) for t in textures])
-                ml = np.mean([t.get("mean_line_length", np.nan) for t in textures])
-                ls = np.mean([t.get("line_support_ratio", np.nan) for t in textures])
-                cr = np.mean([t.get("curve_edge_ratio", np.nan) for t in textures])
-                oe = np.mean([t.get("orientation_entropy", np.nan) for t in textures])
-                ds = np.mean([t.get("dominant_orientation_strength", np.nan) for t in textures])
-                ci = np.mean([t.get("curvature_index", np.nan) for t in textures])
+                mg = safe_mean([t.get("mean_gradient", np.nan) for t in textures])
+                sg = safe_mean([t.get("std_gradient", np.nan) for t in textures])
+                ed = safe_mean([t.get("edge_density", np.nan) for t in textures])
+                lv = safe_mean([t.get("laplacian_variance", np.nan) for t in textures])
+                nl = safe_mean([t.get("num_lines", np.nan) for t in textures])
+                ml = safe_mean([t.get("mean_line_length", np.nan) for t in textures])
+                ls = safe_mean([t.get("line_support_ratio", np.nan) for t in textures])
+                cr = safe_mean([t.get("curve_edge_ratio", np.nan) for t in textures])
+                oe = safe_mean([t.get("orientation_entropy", np.nan) for t in textures])
+                ds = safe_mean([t.get("dominant_orientation_strength", np.nan) for t in textures])
+                ci = safe_mean([t.get("curvature_index", np.nan) for t in textures])
+                ss = safe_mean([t.get("symmetry_score", t.get("symmetry", np.nan)) for t in textures])
+                cs = safe_mean([t.get("composition_score", t.get("composition_balance", np.nan)) for t in textures])
             else:
-                mg = sg = ed = lv = nl = ml = ls = cr = oe = ds = ci = np.nan
+                mg = sg = ed = lv = nl = ml = ls = cr = oe = ds = ci = ss = cs = np.nan
 
             texture_trends["mean_gradient"].append(mg)
             texture_trends["std_gradient"].append(sg)
@@ -244,8 +316,11 @@ def compute_trends(yearly_data, mode="both"):
             texture_trends["orientation_entropy"].append(oe)
             texture_trends["dominant_orientation_strength"].append(ds)
             texture_trends["curvature_index"].append(ci)
+            texture_trends["symmetry_score"].append(ss)
+            texture_trends["composition_score"].append(cs)
 
     return years, color_trends, texture_trends
+
 
 # ---------------- VISUALIZATION ----------------
 def plot_trends(years, color_trends=None, texture_trends=None, mode="both"):
@@ -256,100 +331,70 @@ def plot_trends(years, color_trends=None, texture_trends=None, mode="both"):
 
     def style_axis(ax):
         ax.set_facecolor("#050816")
-
-        ax.grid(
-            color="white",
-            alpha=0.08,
-            linewidth=1
-        )
-
+        ax.grid(color="white", alpha=0.08, linewidth=1)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-
-        ax.spines["left"].set_color((1,1,1,0.1))
-        ax.spines["bottom"].set_color((1,1,1,0.1))
-
+        ax.spines["left"].set_color((1, 1, 1, 0.1))
+        ax.spines["bottom"].set_color((1, 1, 1, 0.1))
         ax.tick_params(colors="white", labelsize=10)
 
     def smooth(values, window=3):
-        s = pd.Series(values)
-        return s.rolling(
-            window=window,
-            center=True,
-            min_periods=1
-        ).mean()
+        s = pd.Series(values, dtype=float)
+        return s.rolling(window=window, center=True, min_periods=1).mean()
 
-    # ----------------------------------------
-    # COLOUR TRENDS
-    # ----------------------------------------
+    def has_real_data(series_keys, trends):
+        for key in series_keys:
+            vals = np.array(trends.get(key, []), dtype=float)
+            if vals.size > 0 and not np.all(np.isnan(vals)):
+                return True
+        return False
 
-    if mode in ("color", "both") and color_trends is not None:
+    def save_group(title, metrics, trends, filename, ylabel="Metric Value"):
+        keys = [key for key, _ in metrics]
+        if not has_real_data(keys, trends):
+            print(f"Skipping {filename} because all values are NaN")
+            return
 
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(15, 8.5))
         fig.patch.set_facecolor("#050816")
-
         style_axis(ax)
 
-        metrics = [
-            ("brightness", "Brightness"),
-            ("warmth", "Warmth"),
-            ("saturation", "Saturation"),
-            ("entropy", "Complexity"),
-        ]
-
         for key, label in metrics:
-            vals = smooth(color_trends[key])
+            vals = smooth(trends[key])
+            ax.plot(years, vals, linewidth=3, alpha=0.92, label=label)
+            ax.scatter(years, vals, s=22, alpha=0.65)
 
-            ax.plot(
-                years,
-                vals,
-                linewidth=3,
-                alpha=0.9,
-                label=label
-            )
-
-            ax.scatter(
-                years,
-                vals,
-                s=20,
-                alpha=0.7
-            )
-
-        ax.set_title(
-            "Temporal Colour Evolution",
-            fontsize=24,
-            pad=20,
-            color="white"
-        )
-
+        ax.set_title(title, fontsize=24, pad=20, color="white")
         ax.set_xlabel("Year", fontsize=14)
-        ax.set_ylabel("Metric Value", fontsize=14)
+        ax.set_ylabel(ylabel, fontsize=14)
 
-        legend = ax.legend(
-            frameon=False,
-            fontsize=12
-        )
-
+        legend = ax.legend(frameon=False, fontsize=12)
         for text in legend.get_texts():
             text.set_color("white")
 
         plt.tight_layout()
-
         plt.savefig(
-            f"{OUTPUT_DIR}/color_trends.png",
+            f"{OUTPUT_DIR}/{filename}",
             dpi=300,
             bbox_inches="tight",
             facecolor=fig.get_facecolor()
         )
-
         plt.close()
 
-    # ----------------------------------------
-    # TEXTURE TRENDS
-    # ----------------------------------------
+    if mode in ("color", "both") and color_trends is not None:
+        save_group(
+            "Temporal Colour Evolution",
+            [
+                ("brightness", "Brightness"),
+                ("warmth", "Warmth"),
+                ("saturation", "Saturation"),
+                ("entropy", "Complexity"),
+            ],
+            color_trends,
+            "color_trends.png"
+        )
 
     if mode in ("edge", "both") and texture_trends is not None:
-
         texture_groups = [
             {
                 "title": "Texture Density",
@@ -360,7 +405,6 @@ def plot_trends(years, color_trends=None, texture_trends=None, mode="both"):
                 ],
                 "file": "texture_density.png"
             },
-
             {
                 "title": "Line Structure",
                 "metrics": [
@@ -370,7 +414,6 @@ def plot_trends(years, color_trends=None, texture_trends=None, mode="both"):
                 ],
                 "file": "line_structure.png"
             },
-
             {
                 "title": "Curves & Orientation",
                 "metrics": [
@@ -380,63 +423,20 @@ def plot_trends(years, color_trends=None, texture_trends=None, mode="both"):
                     ("curvature_index", "Curvature"),
                 ],
                 "file": "curve_structure.png"
+            },
+            {
+                "title": "Symmetry & Composition",
+                "metrics": [
+                    ("symmetry_score", "Symmetry"),
+                    ("composition_score", "Composition"),
+                ],
+                "file": "symmetry_composition.png"
             }
         ]
 
         for group in texture_groups:
+            save_group(group["title"], group["metrics"], texture_trends, group["file"])
 
-            fig, ax = plt.subplots(figsize=(14, 7))
-            fig.patch.set_facecolor("#050816")
-
-            style_axis(ax)
-
-            for key, label in group["metrics"]:
-
-                vals = smooth(texture_trends[key])
-
-                ax.plot(
-                    years,
-                    vals,
-                    linewidth=3,
-                    alpha=0.9,
-                    label=label
-                )
-
-                ax.scatter(
-                    years,
-                    vals,
-                    s=18,
-                    alpha=0.6
-                )
-
-            ax.set_title(
-                group["title"],
-                fontsize=24,
-                pad=20,
-                color="white"
-            )
-
-            ax.set_xlabel("Year", fontsize=14)
-            ax.set_ylabel("Metric Value", fontsize=14)
-
-            legend = ax.legend(
-                frameon=False,
-                fontsize=12
-            )
-
-            for text in legend.get_texts():
-                text.set_color("white")
-
-            plt.tight_layout()
-
-            plt.savefig(
-                f"{OUTPUT_DIR}/{group['file']}",
-                dpi=300,
-                bbox_inches="tight",
-                facecolor=fig.get_facecolor()
-            )
-
-            plt.close()
 
 # ---------------- MAIN ----------------
 def main():
@@ -474,6 +474,7 @@ def main():
     print("Graphs saved to generated_graphs/")
 
     print("Done.")
+
 
 if __name__ == "__main__":
     main()
