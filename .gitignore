@@ -1,5 +1,6 @@
 __pycache__/
 node_modules/
 web/node_modules/
+web/public/generirani_grafi/
 .DS_Store
 *.log

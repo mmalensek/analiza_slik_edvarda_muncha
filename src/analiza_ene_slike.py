@@ -33,7 +33,9 @@ FIGURE_BG = "#1c1b19" # dark warm surface
 TEXT_COLOR = "#cdccca"
 ACCENT = "#4f98a3"
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".jfif", ".webp", ".bmp", ".tiff")
-OUTPUT_DIR = "../web/public/generirani_grafi/"
+# Use absolute path based on module location
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(_MODULE_DIR, "..", "web", "public", "generirani_grafi")
 
 
 def collect_paths_from_range(start: int, end: int, folder: str) -> list[str]:

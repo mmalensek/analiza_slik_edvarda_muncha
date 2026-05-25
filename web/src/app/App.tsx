@@ -128,6 +128,8 @@ export default function App() {
 
   const [showPalette, setShowPalette] =
     useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [imageBustKey, setImageBustKey] = useState(0);
 
   const timelineRef =
     useRef<HTMLDivElement | null>(null);
@@ -215,38 +217,81 @@ export default function App() {
     if (!selectedPainting) return '';
 
     if (showPalette) {
-      return `/generirani_grafi/${selectedPaintingFolder}/palette.png`;
+      return `/generirani_grafi/${selectedPaintingFolder}/palette.png?v=${imageBustKey}`;
     }
 
     if (analysisView === 'original') {
       return `/munch_paintings/${selectedPainting.image}`;
     }
 
-    return `/generirani_grafi/${selectedPaintingFolder}/${analysisView}.png`;
+    return `/generirani_grafi/${selectedPaintingFolder}/${analysisView}.png?v=${imageBustKey}`;
   }, [
     selectedPainting,
     selectedPaintingFolder,
     showPalette,
-    analysisView
+    analysisView,
+    imageBustKey
   ]);
 
   const handlePrevious = useCallback(() => {
-    setShowPalette(false);
-    setSelectedIndex((prev) =>
-      prev > 0
-        ? prev - 1
-        : paintings.length - 1
-    );
-  }, [paintings.length]);
+    (async () => {
+      setShowPalette(false);
+      const target = (prevIndex:number) => (prevIndex > 0 ? prevIndex - 1 : paintings.length - 1);
+      // compute next index
+      setIsGenerating(true);
+      try {
+        const nextIndex = target(selectedIndex);
+        const fname = paintings[nextIndex]?.image;
+        if (fname) {
+          await fetch('http://127.0.0.1:5000/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: fname })
+          });
+          // Increment cache buster to force image reload
+          setImageBustKey(prev => prev + 1);
+        }
+        setSelectedIndex((prev) =>
+          prev > 0
+            ? prev - 1
+            : paintings.length - 1
+        );
+      } catch (e) {
+        console.error('Generation failed', e);
+      } finally {
+        setIsGenerating(false);
+      }
+    })();
+  }, [paintings.length, selectedIndex]);
 
   const handleNext = useCallback(() => {
-    setShowPalette(false);
-    setSelectedIndex((prev) =>
-      prev < paintings.length - 1
-        ? prev + 1
-        : 0
-    );
-  }, [paintings.length]);
+    (async () => {
+      setShowPalette(false);
+      setIsGenerating(true);
+      try {
+        const nextIndex = selectedIndex < paintings.length - 1 ? selectedIndex + 1 : 0;
+        const fname = paintings[nextIndex]?.image;
+        if (fname) {
+          await fetch('http://127.0.0.1:5000/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: fname })
+          });
+          // Increment cache buster to force image reload
+          setImageBustKey(prev => prev + 1);
+        }
+        setSelectedIndex((prev) =>
+          prev < paintings.length - 1
+            ? prev + 1
+            : 0
+        );
+      } catch (e) {
+        console.error('Generation failed', e);
+      } finally {
+        setIsGenerating(false);
+      }
+    })();
+  }, [paintings.length, selectedIndex]);
 
   useEffect(() => {
     const handleKeyDown = (
@@ -273,7 +318,7 @@ export default function App() {
       );
   }, [handlePrevious, handleNext]);
 
-  const selectYear = (year: string) => {
+  const selectYear = async (year: string) => {
     setExpandedYear(year);
     setShowPalette(false);
 
@@ -281,9 +326,22 @@ export default function App() {
       paintingsByYear[year]?.[0];
 
     if (firstPainting) {
-      setSelectedIndex(
-        firstPainting.originalIndex
-      );
+      setIsGenerating(true);
+      try {
+        await fetch('http://127.0.0.1:5000/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: firstPainting.image })
+        });
+        setImageBustKey(prev => prev + 1);
+      } catch (e) {
+        console.error('Generation failed', e);
+      } finally {
+        setSelectedIndex(
+          firstPainting.originalIndex
+        );
+        setIsGenerating(false);
+      }
     }
   };
 
@@ -430,42 +488,65 @@ export default function App() {
                 className="grid lg:grid-cols-2 gap-16 items-center"
               >
                 <div className="relative">
-                  <div className="relative h-[72vh] w-full rounded-3xl border border-white/10 bg-[#11131a] overflow-hidden backdrop-blur-sm flex items-center justify-center p-8">
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.img
-                      key={`${selectedPainting.image}-${analysisView}`}
-                      src={
-                        analysisView === 'original'
-                          ? `/munch_paintings/${selectedPainting.image}`
-                          : `/generirani_grafi/${selectedPainting.image.split('.')[0]}/${analysisView}.png`
-                      }
-                      alt={selectedPainting.title}
-                      initial={{
-                        opacity: 0,
-                        scale: 0.985,
-                        filter: 'blur(6px)'
-                      }}
-                      animate={{
-                        opacity: 1,
-                        scale: 1,
-                        filter: 'blur(0px)'
-                      }}
-                      exit={{
-                        opacity: 0,
-                        scale: 1.01,
-                        filter: 'blur(4px)'
-                      }}
-                      transition={{
-                        duration: 0.05,
-                        ease: 'easeInOut'
-                      }}
-                      className={`absolute inset-0 m-auto max-h-full max-w-full shadow-2xl ${
-                        analysisView === 'original'
-                          ? 'object-contain'
-                          : 'object-contain rounded-2xl'
-                      }`}
-                    />
-                  </AnimatePresence>
+                  <div className={`relative ${showPalette ? 'h-auto' : 'h-[72vh]'} w-full rounded-3xl border border-white/10 bg-[#11131a] overflow-hidden backdrop-blur-sm flex items-center justify-center p-8`}>
+                  {showPalette ? (
+                    // Palette view: original + palette stacked
+                    <div className="flex flex-col gap-6 w-full">
+                      {/* Original image */}
+                      <div className="flex items-center justify-center">
+                        <img
+                          src={`/munch_paintings/${selectedPainting.image}`}
+                          alt={selectedPainting.title}
+                          className="max-h-[36vh] max-w-full object-contain rounded-2xl shadow-2xl"
+                        />
+                      </div>
+                      {/* Palette */}
+                      <div className="flex items-center justify-center">
+                        <img
+                          src={`/generirani_grafi/${selectedPaintingFolder}/palette.png?v=${imageBustKey}`}
+                          alt={`${selectedPainting.title} palette`}
+                          className="max-h-[36vh] max-w-full object-contain rounded-2xl shadow-2xl"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    // Analysis view: single image
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.img
+                        key={`${selectedPainting.image}-${analysisView}`}
+                        src={
+                          analysisView === 'original'
+                            ? `/munch_paintings/${selectedPainting.image}`
+                            : `/generirani_grafi/${selectedPainting.image.split('.')[0]}/${analysisView}.png?v=${imageBustKey}`
+                        }
+                        alt={selectedPainting.title}
+                        initial={{
+                          opacity: 0,
+                          scale: 0.985,
+                          filter: 'blur(6px)'
+                        }}
+                        animate={{
+                          opacity: 1,
+                          scale: 1,
+                          filter: 'blur(0px)'
+                        }}
+                        exit={{
+                          opacity: 0,
+                          scale: 1.01,
+                          filter: 'blur(4px)'
+                        }}
+                        transition={{
+                          duration: 0.05,
+                          ease: 'easeInOut'
+                        }}
+                        className={`absolute inset-0 m-auto max-h-full max-w-full shadow-2xl ${
+                          analysisView === 'original'
+                            ? 'object-contain'
+                            : 'object-contain rounded-2xl'
+                        }`}
+                      />
+                    </AnimatePresence>
+                  )}
                 </div>
 
 
@@ -508,7 +589,7 @@ export default function App() {
 
                   {showPalette ? (
                     <motion.div
-                      key={`${selectedPainting.image}-palette`}
+                      key="palette-description"
                       initial={{
                         opacity: 0,
                         y: 10
@@ -523,14 +604,11 @@ export default function App() {
                       className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5"
                     >
                       <div className="text-sm uppercase tracking-[0.3em] text-amber-400 mb-3">
-                        Palette
+                        Color Palette
                       </div>
-
-                      <img
-                        src={`/generirani_grafi/${selectedPaintingFolder}/palette.png`}
-                        alt={`${selectedPainting.title} palette`}
-                        className="w-full rounded-2xl object-contain max-h-[28rem] bg-black/20"
-                      />
+                      <p className="text-white/60 leading-relaxed">
+                        The dominant colors extracted from the painting, organized by area coverage and visual importance.
+                      </p>
                     </motion.div>
                   ) : (
                     <motion.div
@@ -620,14 +698,16 @@ export default function App() {
                     <div className="flex gap-3 justify-start pt-6">
                       <button
                         onClick={handlePrevious}
-                        className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md flex items-center justify-center transition-all"
+                        disabled={isGenerating}
+                        className={`w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md flex items-center justify-center transition-all ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <ChevronLeft className="w-5 h-5" />
                       </button>
 
                       <button
                         onClick={handleNext}
-                        className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md flex items-center justify-center transition-all"
+                        disabled={isGenerating}
+                        className={`w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md flex items-center justify-center transition-all ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <ChevronRight className="w-5 h-5" />
                       </button>
@@ -804,13 +884,22 @@ export default function App() {
                             key={
                               painting.originalIndex
                             }
-                            onClick={() => {
-                              setShowPalette(
-                                false
-                              );
-                              setSelectedIndex(
-                                painting.originalIndex
-                              );
+                            onClick={async () => {
+                              setShowPalette(false);
+                              setIsGenerating(true);
+                              try {
+                                await fetch('http://127.0.0.1:5000/generate', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ filename: painting.image })
+                                });
+                                setImageBustKey(prev => prev + 1);
+                              } catch (e) {
+                                console.error('Generation failed', e);
+                              } finally {
+                                setSelectedIndex(painting.originalIndex);
+                                setIsGenerating(false);
+                              }
                             }}
                             className="group text-left"
                           >
@@ -853,171 +942,6 @@ export default function App() {
 
       {pageView === 'analytics' && (
         <section className="max-w-7xl mx-auto px-8 py-20">
-          <div className="mb-24">
-            <div className="text-sm uppercase tracking-[0.4em] text-amber-400 mb-6">
-              Computational Analysis
-            </div>
-
-            <h2 className="text-6xl font-light leading-tight max-w-5xl">
-              Machine vision analysis of
-              Edvard Munch&apos;s paintings.
-            </h2>
-
-            <p className="mt-8 text-white/50 text-lg leading-relaxed max-w-3xl">
-              Each artwork is analysed through
-              colour clustering, saliency,
-              edge detection, composition
-              structure and long-term temporal
-              graphs.
-            </p>
-          </div>
-
-          <div className="mb-24 rounded-[2rem] overflow-hidden border border-white/10 bg-black/30 p-8">
-            <img
-              src={getMainVisualSrc()}
-              alt={
-                showPalette
-                  ? `${selectedPainting.title} palette`
-                  : analysisView
-              }
-              className="w-full rounded-2xl object-contain max-h-[75vh]"
-            />
-
-            <div className="mt-6">
-              <div className="text-sm uppercase tracking-[0.3em] text-amber-400 mb-3">
-                {showPalette
-                  ? 'Current Palette'
-                  : 'Current Analysis'}
-              </div>
-
-              <h3 className="text-3xl font-light capitalize">
-                {showPalette
-                  ? 'palette'
-                  : analysisView}
-              </h3>
-
-              <p className="mt-4 text-white/50 max-w-3xl">
-                {showPalette
-                  ? 'Dominant colour palette extracted for the selected painting.'
-                  : analysisDescriptions[
-                      analysisView
-                    ]}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-3 mb-10">
-            {availableAnalysisModes.map((mode) => (
-              <button
-                key={mode}
-                onClick={() => {
-                  setShowPalette(false);
-                  setAnalysisView(mode);
-                }}
-                className={`px-4 py-2 rounded-full text-sm border transition-all capitalize ${
-                  analysisView === mode &&
-                  !showPalette
-                    ? 'bg-amber-400 text-black border-amber-400'
-                    : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
-                }`}
-              >
-                {mode}
-              </button>
-            ))}
-
-            <button
-              onClick={() =>
-                setShowPalette((prev) => !prev)
-              }
-              className={`px-4 py-2 rounded-full text-sm border transition-all ${
-                showPalette
-                  ? 'bg-amber-400 text-black border-amber-400'
-                  : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
-              }`}
-            >
-              palette
-            </button>
-          </div>
-
-          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-8">
-            {analyticsCards.map((mode) => (
-              <motion.button
-                whileHover={{ y: -5 }}
-                key={mode}
-                onClick={() => {
-                  setShowPalette(false);
-                  setAnalysisView(mode);
-                }}
-                className={`group rounded-[2rem] overflow-hidden border transition-all ${
-                  analysisView === mode &&
-                  !showPalette
-                    ? 'border-amber-400'
-                    : 'border-white/10 hover:border-white/30'
-                }`}
-              >
-                <div className="aspect-[4/3] bg-black/40 overflow-hidden">
-                  <img
-                    src={`/generirani_grafi/${selectedPaintingFolder}/${mode}.png`}
-                    alt={mode}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                </div>
-
-                <div className="p-6 text-left">
-                  <div className="text-sm uppercase tracking-[0.25em] text-amber-400 mb-3">
-                    Analysis
-                  </div>
-
-                  <h3 className="text-2xl font-light capitalize">
-                    {mode}
-                  </h3>
-
-                  <p className="mt-4 text-white/50 text-sm leading-relaxed">
-                    {
-                      analysisDescriptions[
-                        mode
-                      ]
-                    }
-                  </p>
-                </div>
-              </motion.button>
-            ))}
-
-            <motion.button
-              whileHover={{ y: -5 }}
-              onClick={() =>
-                setShowPalette(true)
-              }
-              className={`group rounded-[2rem] overflow-hidden border transition-all ${
-                showPalette
-                  ? 'border-amber-400'
-                  : 'border-white/10 hover:border-white/30'
-              }`}
-            >
-              <div className="aspect-[4/3] bg-black/40 overflow-hidden">
-                <img
-                  src={`/generirani_grafi/${selectedPaintingFolder}/palette.png`}
-                  alt="palette"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-              </div>
-
-              <div className="p-6 text-left">
-                <div className="text-sm uppercase tracking-[0.25em] text-amber-400 mb-3">
-                  Analysis
-                </div>
-
-                <h3 className="text-2xl font-light capitalize">
-                  palette
-                </h3>
-
-                <p className="mt-4 text-white/50 text-sm leading-relaxed">
-                  Dominant colour palette for
-                  the selected painting.
-                </p>
-              </div>
-            </motion.button>
-          </div>
 
           <div className="mt-24">
             <div className="flex items-center gap-5 mb-10">
