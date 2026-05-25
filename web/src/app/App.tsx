@@ -57,12 +57,14 @@ export default function App() {
   );
 
   const [analysisView, setAnalysisView] =
-  useState<
-    'original' |
-    'edges' |
-    'saliency' |
-    'palette'
-  >('original');
+    useState<
+      'original' |
+      'edges' |
+      'saliency'
+    >('original');
+
+  const [showPalette, setShowPalette] =
+    useState(false);
 
   const timelineRef =
     useRef<HTMLDivElement | null>(null);
@@ -381,44 +383,83 @@ export default function App() {
               <div className="relative">
                 {/* FIXED IMAGE CONTAINER */}
                 <div className="h-[72vh] w-full rounded-3xl border border-white/10 bg-black/30 overflow-hidden backdrop-blur-sm flex items-center justify-center p-8">
-                  <img
-                    src={
-                      analysisView === 'original'
-                        ? `/munch_paintings/${selectedPainting.image}`
-                        : `/generirani_grafi/${
-                            selectedPainting.image.split('.')[0]
-                          }/${analysisView}.png`
-                    }
-                    alt={selectedPainting.title}
-                    className="max-h-full max-w-full object-contain shadow-2xl transition-all duration-500"
-                  />
+                 <img
+                  src={
+                    analysisView === 'original'
+                      ? `/munch_paintings/${selectedPainting.image}`
+                      : `/generirani_grafi/${
+                          selectedPainting.image.split('.')[0]
+                        }/${analysisView}.png`
+                  }
+                  alt={selectedPainting.title}
+                  className="max-h-full max-w-full object-contain shadow-2xl transition-all duration-500"
+                />
+
                 </div>
 
                 <div className="absolute top-6 left-6 flex gap-2 z-20">
                   {[
-                  'original',
-                  'edges',
-                  'saliency',
-                  'palette'
-                ].map((mode) => (
+                    'original',
+                    'edges',
+                    'saliency'
+                  ].map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() =>
+                        setAnalysisView(
+                          mode as typeof analysisView
+                        )
+                      }
+                      className={`px-4 py-2 rounded-full text-sm backdrop-blur-md border transition-all ${
+                        analysisView === mode
+                          ? 'bg-amber-400 text-black border-amber-400'
+                          : 'bg-black/40 text-white border-white/10 hover:bg-white/10'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+
                   <button
-                    key={mode}
-                    onClick={() =>
-                      setAnalysisView(
-                        mode as typeof analysisView
-                      )
-                    }
+                    onClick={() => {
+                      setAnalysisView('original');
+                      setShowPalette((prev) => !prev);
+                    }}
                     className={`px-4 py-2 rounded-full text-sm backdrop-blur-md border transition-all ${
-                      analysisView === mode
+                      showPalette
                         ? 'bg-amber-400 text-black border-amber-400'
                         : 'bg-black/40 text-white border-white/10 hover:bg-white/10'
                     }`}
                   >
-                    {mode}
+                    palette
                   </button>
-                ))}
 
                 </div>
+
+                  <AnimatePresence>
+                    {showPalette && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute top-20 left-6 z-30 w-64 rounded-2xl border border-white/10 bg-black/75 backdrop-blur-xl p-4 shadow-2xl"
+                      >
+                        <div className="text-xs uppercase tracking-[0.25em] text-white/50 mb-3">
+                          Colour Palette
+                        </div>
+
+                        <img
+                          src={`/generirani_grafi/${
+                            selectedPainting.image.split('.')[0]
+                          }/palette.png`}
+                          alt={`${selectedPainting.title} colour palette`}
+                          className="w-full rounded-xl object-contain"
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
 
                 {/* ARROWS */}
                 <div className="absolute bottom-6 left-6 flex gap-3">
@@ -730,38 +771,167 @@ export default function App() {
      )}
      {pageView === 'analytics' && (
       <section className="max-w-7xl mx-auto px-8 py-20">
-        <div className="mb-16">
-          <h2 className="text-5xl font-light">
-            Collection Analytics
+
+        {/* ========================= */}
+        {/* HERO */}
+        {/* ========================= */}
+
+        <div className="mb-24">
+          <div className="text-sm uppercase tracking-[0.4em] text-amber-400 mb-6">
+            Computational Analysis
+          </div>
+
+          <h2 className="text-6xl font-light leading-tight max-w-4xl">
+            Temporal patterns across
+            Edvard Munch’s artistic career.
           </h2>
 
-          <p className="mt-4 text-white/50 max-w-2xl">
-            Statistical and visual analysis
-            across Edvard Munch's complete
-            body of work.
+          <p className="mt-8 text-white/50 text-lg leading-relaxed max-w-3xl">
+            Using computer vision techniques,
+            the collection was analysed through
+            colour distribution, edge density,
+            texture structure, saliency,
+            line orientation and visual complexity
+            to uncover long-term stylistic evolution.
           </p>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-10">
+        {/* ========================= */}
+        {/* METRIC CARDS */}
+        {/* ========================= */}
+
+        <div className="grid md:grid-cols-3 gap-6 mb-24">
 
           {[
-            'colors_over_time.png',
-            'texture_over_time.png',
-            'palette_evolution.png',
-            'edge_density.png'
-          ].map((graph) => (
+            {
+              title: '1500+',
+              subtitle: 'Paintings Analysed'
+            },
+            {
+              title: '11',
+              subtitle: 'Texture Metrics'
+            },
+            {
+              title: '1860–1944',
+              subtitle: 'Career Span'
+            }
+          ].map((item) => (
             <div
-              key={graph}
-              className="rounded-3xl overflow-hidden border border-white/10 bg-black/20 p-6"
+              key={item.title}
+              className="rounded-3xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-sm"
             >
-              <img
-                src={`/analytics/${graph}`}
-                className="w-full rounded-2xl"
-              />
+              <div className="text-5xl font-light text-amber-400">
+                {item.title}
+              </div>
+
+              <div className="mt-4 text-white/50 tracking-wide">
+                {item.subtitle}
+              </div>
             </div>
           ))}
-
         </div>
+
+        {/* ========================= */}
+        {/* LARGE FEATURE GRAPH */}
+        {/* ========================= */}
+
+        <div className="mb-24">
+          <div className="mb-8">
+            <h3 className="text-3xl font-light">
+              Colour Evolution Through Time
+            </h3>
+
+            <p className="text-white/50 mt-3 max-w-2xl">
+              Analysis of brightness,
+              warmth, saturation and
+              chromatic complexity across
+              different periods of Munch’s work.
+            </p>
+          </div>
+
+          <div className="rounded-[2rem] overflow-hidden border border-white/10 bg-black/30 p-8">
+            <img
+              src="/generirani_grafi/timeline/color_trends.png"
+              className="w-full rounded-2xl"
+            />
+          </div>
+        </div>
+
+        {/* ========================= */}
+        {/* TWO COLUMN ANALYSIS */}
+        {/* ========================= */}
+
+        <div className="grid xl:grid-cols-2 gap-10 mb-24">
+
+          {/* TEXTURE */}
+          <div className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-8">
+
+            <div className="mb-6">
+              <div className="text-sm uppercase tracking-[0.3em] text-amber-400 mb-3">
+                Texture Analysis
+              </div>
+
+              <h3 className="text-3xl font-light">
+                Density & Surface Complexity
+              </h3>
+            </div>
+
+            <img
+              src="/generirani_grafi/timeline/texture_density.png"
+              className="w-full rounded-2xl"
+            />
+          </div>
+
+          {/* LINES */}
+          <div className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-8">
+
+            <div className="mb-6">
+              <div className="text-sm uppercase tracking-[0.3em] text-amber-400 mb-3">
+                Structural Analysis
+              </div>
+
+              <h3 className="text-3xl font-light">
+                Straight Line Structures
+              </h3>
+            </div>
+
+            <img
+              src="/generirani_grafi/timeline/line_structure.png"
+              className="w-full rounded-2xl"
+            />
+          </div>
+        </div>
+
+        {/* ========================= */}
+        {/* FINAL LARGE GRAPH */}
+        {/* ========================= */}
+
+        <div className="mb-12">
+
+          <div className="mb-8">
+            <div className="text-sm uppercase tracking-[0.3em] text-amber-400 mb-3">
+              Orientation Analysis
+            </div>
+
+            <h3 className="text-3xl font-light">
+              Curvature & Directional Behaviour
+            </h3>
+
+            <p className="text-white/50 mt-3 max-w-2xl">
+              Measuring orientation entropy,
+              curvature and dominant directional
+              structures within Munch’s compositions.
+            </p>
+          </div>
+
+          <div className="rounded-[2rem] overflow-hidden border border-white/10 bg-black/30 p-8">
+            <img
+              src="/generirani_grafi/timeline/curve_structure.png"
+              className="w-full rounded-2xl"
+            />
+          </div>
+        </div>
+
       </section>
     )}
     </div>

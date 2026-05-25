@@ -249,53 +249,194 @@ def compute_trends(yearly_data, mode="both"):
 
 # ---------------- VISUALIZATION ----------------
 def plot_trends(years, color_trends=None, texture_trends=None, mode="both"):
-    if mode in ("color", "both") and color_trends is not None:
-        fig, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(years, color_trends["brightness"], label="Brightness")
-        ax.plot(years, color_trends["warmth"], label="Warmth (Red - Blue)")
-        ax.plot(years, color_trends["saturation"], label="Saturation")
-        ax.plot(years, color_trends["entropy"], label="Colour Complexity (Entropy)")
+    OUTPUT_DIR = "../web/public/generirani_grafi/timeline/"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-        ax.set_xlabel("Year")
-        ax.set_ylabel("Value")
-        ax.set_title("Temporal Colour Evolution")
-        ax.legend()
-        ax.grid(alpha=0.2)
+    plt.style.use("dark_background")
+
+    def style_axis(ax):
+        ax.set_facecolor("#050816")
+
+        ax.grid(
+            color="white",
+            alpha=0.08,
+            linewidth=1
+        )
+
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        ax.spines["left"].set_color((1,1,1,0.1))
+        ax.spines["bottom"].set_color((1,1,1,0.1))
+
+        ax.tick_params(colors="white", labelsize=10)
+
+    def smooth(values, window=3):
+        s = pd.Series(values)
+        return s.rolling(
+            window=window,
+            center=True,
+            min_periods=1
+        ).mean()
+
+    # ----------------------------------------
+    # COLOUR TRENDS
+    # ----------------------------------------
+
+    if mode in ("color", "both") and color_trends is not None:
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+        fig.patch.set_facecolor("#050816")
+
+        style_axis(ax)
+
+        metrics = [
+            ("brightness", "Brightness"),
+            ("warmth", "Warmth"),
+            ("saturation", "Saturation"),
+            ("entropy", "Complexity"),
+        ]
+
+        for key, label in metrics:
+            vals = smooth(color_trends[key])
+
+            ax.plot(
+                years,
+                vals,
+                linewidth=3,
+                alpha=0.9,
+                label=label
+            )
+
+            ax.scatter(
+                years,
+                vals,
+                s=20,
+                alpha=0.7
+            )
+
+        ax.set_title(
+            "Temporal Colour Evolution",
+            fontsize=24,
+            pad=20,
+            color="white"
+        )
+
+        ax.set_xlabel("Year", fontsize=14)
+        ax.set_ylabel("Metric Value", fontsize=14)
+
+        legend = ax.legend(
+            frameon=False,
+            fontsize=12
+        )
+
+        for text in legend.get_texts():
+            text.set_color("white")
+
         plt.tight_layout()
-        plt.show()
+
+        plt.savefig(
+            f"{OUTPUT_DIR}/color_trends.png",
+            dpi=300,
+            bbox_inches="tight",
+            facecolor=fig.get_facecolor()
+        )
+
+        plt.close()
+
+    # ----------------------------------------
+    # TEXTURE TRENDS
+    # ----------------------------------------
 
     if mode in ("edge", "both") and texture_trends is not None:
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
 
-        ax1.plot(years, texture_trends["mean_gradient"], label="Mean Gradient")
-        ax1.plot(years, texture_trends["std_gradient"], label="Std Gradient")
-        ax1.plot(years, texture_trends["edge_density"], label="Edge Density")
-        ax1.plot(years, texture_trends["laplacian_variance"], label="Laplacian Variance")
-        ax1.set_ylabel("Texture Metric")
-        ax1.set_title("Temporal Texture Trends")
-        ax1.legend()
-        ax1.grid(alpha=0.2)
+        texture_groups = [
+            {
+                "title": "Texture Density",
+                "metrics": [
+                    ("mean_gradient", "Mean Gradient"),
+                    ("edge_density", "Edge Density"),
+                    ("laplacian_variance", "Laplacian Variance"),
+                ],
+                "file": "texture_density.png"
+            },
 
-        ax2.plot(years, texture_trends["num_lines"], label="Number of Lines")
-        ax2.plot(years, texture_trends["mean_line_length"], label="Mean Line Length")
-        ax2.set_ylabel("Count / Length")
-        ax2.set_title("Temporal Straight Line Structure")
-        ax2.legend()
-        ax2.grid(alpha=0.2)
+            {
+                "title": "Line Structure",
+                "metrics": [
+                    ("num_lines", "Number of Lines"),
+                    ("mean_line_length", "Line Length"),
+                    ("line_support_ratio", "Line Support"),
+                ],
+                "file": "line_structure.png"
+            },
 
-        ax3.plot(years, texture_trends["line_support_ratio"], label="Line Support Ratio")
-        ax3.plot(years, texture_trends["curve_edge_ratio"], label="Curve Edge Ratio")
-        ax3.plot(years, texture_trends["orientation_entropy"], label="Orientation Entropy")
-        ax3.plot(years, texture_trends["dominant_orientation_strength"], label="Dominant Orientation Strength")
-        ax3.plot(years, texture_trends["curvature_index"], label="Curvature Index")
-        ax3.set_xlabel("Year")
-        ax3.set_ylabel("Normalized Metric")
-        ax3.set_title("Temporal Line / Curve Structure")
-        ax3.legend(ncol=2)
-        ax3.grid(alpha=0.2)
+            {
+                "title": "Curves & Orientation",
+                "metrics": [
+                    ("curve_edge_ratio", "Curve Ratio"),
+                    ("orientation_entropy", "Orientation Entropy"),
+                    ("dominant_orientation_strength", "Orientation Strength"),
+                    ("curvature_index", "Curvature"),
+                ],
+                "file": "curve_structure.png"
+            }
+        ]
 
-        plt.tight_layout()
-        plt.show()
+        for group in texture_groups:
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+            fig.patch.set_facecolor("#050816")
+
+            style_axis(ax)
+
+            for key, label in group["metrics"]:
+
+                vals = smooth(texture_trends[key])
+
+                ax.plot(
+                    years,
+                    vals,
+                    linewidth=3,
+                    alpha=0.9,
+                    label=label
+                )
+
+                ax.scatter(
+                    years,
+                    vals,
+                    s=18,
+                    alpha=0.6
+                )
+
+            ax.set_title(
+                group["title"],
+                fontsize=24,
+                pad=20,
+                color="white"
+            )
+
+            ax.set_xlabel("Year", fontsize=14)
+            ax.set_ylabel("Metric Value", fontsize=14)
+
+            legend = ax.legend(
+                frameon=False,
+                fontsize=12
+            )
+
+            for text in legend.get_texts():
+                text.set_color("white")
+
+            plt.tight_layout()
+
+            plt.savefig(
+                f"{OUTPUT_DIR}/{group['file']}",
+                dpi=300,
+                bbox_inches="tight",
+                facecolor=fig.get_facecolor()
+            )
+
+            plt.close()
 
 # ---------------- MAIN ----------------
 def main():
@@ -328,8 +469,9 @@ def main():
     print("Computing trends...")
     years, color_trends, texture_trends = compute_trends(yearly, mode=args.mode)
 
-    print("Plotting results...")
+    print("Generating graphs...")
     plot_trends(years, color_trends, texture_trends, mode=args.mode)
+    print("Graphs saved to generated_graphs/")
 
     print("Done.")
 
