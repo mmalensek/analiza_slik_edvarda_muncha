@@ -32,6 +32,17 @@ To replace placeholder images with actual Munch paintings:
 
 The application currently uses Unsplash art images as fallbacks when actual images aren't found.
 
+## Run the App
+
+Run the website from the `web` folder:
+
+```bash
+pnpm install
+pnpm dev
+```
+
+The app should open at the local Vite URL shown in the terminal, usually `http://localhost:5173`.
+
 ## Navigation
 
 - **Click** on any thumbnail in the timeline to jump to that painting

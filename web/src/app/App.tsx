@@ -561,22 +561,6 @@ export default function App() {
                       </p>
                     </motion.div>
                   )}
-
-                  <div className="absolute bottom-6 left-6 flex gap-3">
-                    <button
-                      onClick={handlePrevious}
-                      className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md flex items-center justify-center transition-all"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
-
-                    <button
-                      onClick={handleNext}
-                      className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md flex items-center justify-center transition-all"
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
-                  </div>
                 </div>
 
                 <div className="space-y-8">
@@ -633,16 +617,20 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                      <div className="text-sm uppercase tracking-[0.3em] text-amber-400 mb-3">
-                        Archive Note
-                      </div>
+                    <div className="flex gap-3 justify-start pt-6">
+                      <button
+                        onClick={handlePrevious}
+                        className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md flex items-center justify-center transition-all"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
 
-                      <p className="text-white/60 leading-relaxed">
-                        {
-                          selectedPainting.description
-                        }
-                      </p>
+                      <button
+                        onClick={handleNext}
+                        className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md flex items-center justify-center transition-all"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
                     </div>
                   </div>
                 </div>
