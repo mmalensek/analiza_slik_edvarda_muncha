@@ -34,12 +34,22 @@ The application currently uses Unsplash art images as fallbacks when actual imag
 
 ## Run the App
 
+### Frontend
+
 Run the website from the `web` folder:
 
 ```bash
 pnpm install
 pnpm dev
 ```
+
+### Backend
+
+```bash
+# samo zaženi skripto server
+python3 web/api/server.py
+```
+
 
 The app should open at the local Vite URL shown in the terminal, usually `http://localhost:5173`.
 
